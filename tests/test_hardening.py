@@ -392,3 +392,75 @@ class TestTazelik:
         saglam = set(tablo.loc[tablo["hukum_verilebilir"], "host_id"])
         y = set(yaniltici_temizler()["host_id"])
         assert not (saglam & y)
+
+
+# --------------------------------------------------------------------------
+class TestBagimsizDenetimBulgulari:
+    """Bagimsiz bir denetci ajanin bulduklari."""
+
+    def test_hic_gozlemlenmemis_kontrol_sifir_risk_uretmez(self):
+        """P2-A: fillna(0.0) yuzunden, hakkinda hicbir sey bilinmeyen bir
+        kontrol TAM UYUMLU gibi puanlaniyordu. Projenin tezinin tam tersi.
+        """
+
+        from src.scoring import risk_tablosu
+
+        df = birlesik().copy()
+        maske = df["kontrol_id"] == "FIRE-4590"
+        df.loc[maske, "sonuc"] = "notchecked"
+        df.loc[maske, "durum"] = "belirsiz"
+
+        r = risk_tablosu(df)
+        alt = r[r["kontrol_id"] == "FIRE-4590"]
+        assert (alt["filo_uyumsuzluk_orani"] > 0).all(), "bilinmeyen kontrol sifir oran aldi"
+        assert alt["belirsiz_risk"].sum() > 0, "hic gozlemlenmemis kontrol sifir risk uretti"
+
+    def test_gozlemlenen_kontroller_etkilenmedi(self):
+        """Asiri duzeltme olmamali: gozlemlenen kontroller kendi oranini kullanmali."""
+        from src.scoring import kontrol_uyumsuzluk_orani, risk_tablosu
+
+        oran = kontrol_uyumsuzluk_orani()
+        r = risk_tablosu()
+        for kid in ("5.2.12", "PKGS-7392"):
+            gercek = r.loc[r["kontrol_id"] == kid, "filo_uyumsuzluk_orani"].iloc[0]
+            assert abs(gercek - oran[kid]) < 1e-9
+
+    @pytest.mark.parametrize(
+        "girdi,beklenen",
+        [
+            ({"dogrulandi": "true", "gerekce": "", "sorunlar": []}, True),
+            ({"dogrulandi": "FALSE", "gerekce": "", "sorunlar": []}, False),
+            ({"dogrulandi": True, "gerekce": "", "sorunlar": []}, True),
+            ({"dogrulandi": "belki", "gerekce": "", "sorunlar": []}, None),
+            (["liste", "geldi"], None),
+            ("duz metin", None),
+        ],
+    )
+    def test_dogrulama_semasi_bicimi_oturtur(self, girdi, beklenen):
+        """P2-B: denetci model 'true' (string) donunce CLI KeyError ile cokuyordu."""
+        from src.agent import _dogrulama_semasi
+
+        r = _dogrulama_semasi(girdi)
+        assert r["dogrulandi"] is beklenen
+        assert isinstance(r["sorunlar"], list)
+        assert isinstance(r["gerekce"], str)
+
+    def test_cli_eslemesi_hicbir_girdide_patlamaz(self):
+        from src.agent import _dogrulama_semasi
+
+        for girdi in ({"dogrulandi": "true"}, {"dogrulandi": None}, ["x"], 42):
+            d = _dogrulama_semasi(girdi)
+            {True: "DOGRULANDI", False: "SORUNLU", None: "CALISTIRILAMADI"}[d["dogrulandi"]]
+
+    def test_maruziyet_araligi_belgelenen_degerle_uyusuyor(self):
+        """P2-C: README '~10 kat' diyordu, gercek ~37 kat."""
+        from src.scoring import maruziyet_carpani
+
+        en_maruz = maruziyet_carpani({
+            "ortam": "uretim", "ag_bolgesi": "dmz", "veri_siniflandirmasi": "hassas",
+            "internet_erisimi": True, "destek_durumu": "destegi_bitti"})
+        en_korunakli = maruziyet_carpani({
+            "ortam": "test", "ag_bolgesi": "kisitli", "veri_siniflandirmasi": "genel",
+            "internet_erisimi": False, "destek_durumu": "destekleniyor"})
+        oran = en_maruz / en_korunakli
+        assert 35 < oran < 39, f"belgelenen ~37 kat degil: {oran:.1f}"

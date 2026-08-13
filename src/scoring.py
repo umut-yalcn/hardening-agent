@@ -48,8 +48,9 @@ def _bool_cevir(deger: object) -> bool:
 def maruziyet_carpani(sunucu: pd.Series | dict) -> float:
     """Bir sunucunun maruziyet carpanini dondurur.
 
-    Taban 1.0. Tum etkenler carpimsal uygulanir; en maruz sunucu en korunakli
-    sunucudan yaklasik 10 kat agir sayilir.
+    Taban 1.0. Tum etkenler carpimsal uygulanir. Teorik aralik 0.32 - 11.83,
+    yani en maruz sunucu en korunaklidan ~37 kat agir sayilir (mevcut filoda
+    gorulen aralik ~27 kat). Taban 1.0'a gore en maruz sunucu ~12 kat.
     """
     c = 1.0
     c *= ORTAM_CARPANI.get(sunucu["ortam"], 1.0)
@@ -92,7 +93,22 @@ def risk_tablosu(df: pd.DataFrame | None = None) -> pd.DataFrame:
     df["maruziyet"] = df.apply(maruziyet_carpani, axis=1)
 
     oran = kontrol_uyumsuzluk_orani(df)
-    df["filo_uyumsuzluk_orani"] = df["kontrol_id"].map(oran).fillna(0.0)
+
+    # Hic gozlemlenmemis bir kontrolun beklenen riski SIFIR OLAMAZ - projenin
+    # tezi tam olarak bu. Onceden fillna(0.0) kullaniliyordu: filo capinda bir
+    # denetim ajani arizasi yuzunden bir kontrol hicbir sunucuda kosmadiysa,
+    # hakkinda hicbir sey bilinmeyen o kontrol TAM UYUMLU gibi puanlaniyordu.
+    # Olculdu: FIRE-4590 (agirlik 10, guvenlik duvari) tum filoda notchecked
+    # yapildiginda toplam risk 808.9 -> 0.0 dusuyordu. Ikili panellerin
+    # notchecked'i yesile boyamasi neyse, bu da onun risk katmanindaki hali.
+    #
+    # Dayanak yoksa filo genelindeki ortalama uyumsuzluk orani kullaniliyor:
+    # bilinmeyen bir kontrol, ortalama bir kontrol kadar riskli varsayilir.
+    if oran.empty:
+        varsayilan = 0.5
+    else:
+        varsayilan = float(oran.mean())
+    df["filo_uyumsuzluk_orani"] = df["kontrol_id"].map(oran).fillna(varsayilan)
 
     tam_risk = df["agirlik"] * df["maruziyet"]
 

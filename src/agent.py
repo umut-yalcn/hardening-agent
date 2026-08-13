@@ -251,6 +251,47 @@ def _metin_cikar(icerik: Any) -> str:
     return str(icerik)
 
 
+#: Modelin "true" yazmasi yaygin bir davranis; JSON booleanı ile string
+#: karismasin diye acikca esliyoruz.
+_DOGRU_METINLER = {"true", "evet", "yes", "1", "dogru", "doğru"}
+_YANLIS_METINLER = {"false", "hayir", "hayır", "no", "0", "yanlis", "yanlış"}
+
+
+def _dogrulama_semasi(ham: Any) -> dict[str, Any]:
+    """Denetci modelin ciktisini guvenli bir bicime oturtur.
+
+    Model JSON uretiyor ama SEMASI garanti degil: `true` yerine `"true"`
+    yazabiliyor, sozluk yerine liste dondurebiliyor. Onceden ham cikti oldugu
+    gibi dondurulup CLI'da `{True: ..., False: ..., None: ...}[deger]` ile
+    eslestiriliyordu; string gelince KeyError, liste gelince AttributeError
+    firliyordu - hem de cevap ekrana basildiktan SONRA ve tum kota
+    harcanmisken. Canli demoda kotu bir an.
+    """
+    if not isinstance(ham, dict):
+        return {
+            "dogrulandi": None,
+            "gerekce": f"Denetci model beklenmeyen bicimde yanit verdi ({type(ham).__name__}).",
+            "sorunlar": [],
+        }
+
+    deger = ham.get("dogrulandi")
+    if isinstance(deger, str):
+        kucuk = deger.strip().lower()
+        deger = True if kucuk in _DOGRU_METINLER else (False if kucuk in _YANLIS_METINLER else None)
+    elif not isinstance(deger, bool):
+        deger = None
+
+    sorunlar = ham.get("sorunlar")
+    if not isinstance(sorunlar, list):
+        sorunlar = [str(sorunlar)] if sorunlar else []
+
+    return {
+        "dogrulandi": deger,
+        "gerekce": str(ham.get("gerekce", "")),
+        "sorunlar": [str(s) for s in sorunlar],
+    }
+
+
 def _dogrula(cevap: str, arac_ciktilari: list[str]) -> dict[str, Any]:
     """Cevabi arac ciktilariyla karsilastirir.
 
@@ -277,7 +318,7 @@ def _dogrula(cevap: str, arac_ciktilari: list[str]) -> dict[str, Any]:
         ham = _metin_cikar(yanit.content).strip()
         if ham.startswith("```"):
             ham = ham.split("```")[1].removeprefix("json").strip()
-        return json.loads(ham)
+        return _dogrulama_semasi(json.loads(ham))
     except Exception as hata:  # dogrulama coktuyse cevabi bloklamayiz
         return {
             "dogrulandi": None,

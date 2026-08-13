@@ -106,7 +106,8 @@ Aynı filo, iki farklı sıralama:
 **İki listenin ortak sunucusu: 0/4.**
 
 Maruziyet çarpanı çarpımsaldır: ortam × ağ bölgesi × veri sınıflandırması ×
-internet erişimi × destek durumu. En maruz sunucu en korunaklıdan ~10 kat ağır sayılır.
+internet erişimi × destek durumu. Teorik aralık **0.32 – 11.83**; en maruz sunucu
+en korunaklıdan **~37 kat** ağır sayılır (bu filoda görülen aralık ~27 kat).
 
 ### 2. Bilinmeyen, uyumlu değildir
 
@@ -285,7 +286,7 @@ Parola deneme sınırı hangi sunucularda tanımlı değil?
 ## Doğrulama — API anahtarı gerekmez
 
 ```bash
-pytest tests/ -q                  # 82 passed
+pytest tests/ -q                  # 92 passed
 python scripts/demo_posture.py    # analiz katmanını canlı gösterir
 ```
 

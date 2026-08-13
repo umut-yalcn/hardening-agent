@@ -296,9 +296,6 @@ KONTROLLER: tuple[Kontrol, ...] = _SSH + _LYNIS
 
 KONTROL_INDEKS: dict[str, Kontrol] = {k.kontrol_id: k for k in KONTROLLER}
 
-KATEGORILER: tuple[str, ...] = tuple(sorted({k.kategori for k in KONTROLLER}))
-
-
 def kontrol_getir(kontrol_id: str) -> Kontrol:
     """Kontrolu kimligine gore dondurur."""
     try:
