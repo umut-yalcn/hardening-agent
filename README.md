@@ -218,6 +218,20 @@ python scripts/generate_fleet.py --hosts 120
 API anahtarı: [Google AI Studio](https://aistudio.google.com/apikey) ücretsiz
 katmanı yeterli. Sağlayıcı `.env` içinde tek satırla değişir (`google` / `anthropic`).
 
+### Ücretsiz katman limitleri
+
+| Sınır | Değer | Etkisi |
+|---|---|---|
+| Dakikada istek | 5 | Ajan tek soruda 5-10 çağrı + doğrulama çağrısı yapar → 429 |
+| **Günde istek** | **20** | **Günde yaklaşık 2-3 soru** |
+
+Dakikalık sınır için hız sınırlayıcı var (`ISTEK_HIZI_RPM`, varsayılan 4; ücretli
+katmanda `0` ile kapatılır). Günlük sınır kodla çözülemez — kotalar model başına
+ayrı olduğu için `LLM_MODEL=gemini-3.5-flash` ile başka bir modele geçilebilir.
+
+Doğrulama katmanı her soruya bir model çağrısı ekler; kota darsa
+`sor(..., dogrula=False)` ya da API'de `"dogrula": false` ile kapatılabilir.
+
 ## Kullanım
 
 ```bash
