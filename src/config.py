@@ -8,6 +8,7 @@ kullanildigini bilmez.
 from __future__ import annotations
 
 import os
+import pathlib
 import time
 from functools import lru_cache
 
@@ -19,19 +20,11 @@ load_dotenv()
 # Ucretsiz katmanda Flash ve Flash-Lite aileleri aciktir (Pro modelleri Nisan 2026'da
 # ucretli katmana tasindi). Ajan, hangi araci ne zaman cagiracagina kendi karar verdigi
 # icin Flash-Lite yerine Flash tercih edildi - arac secimi muhakeme isi.
-# Hesabinda hangilerinin acik oldugunu gormek icin: python scripts/check_models.py
 DEFAULT_MODELS = {
     "google": "gemini-3.6-flash",
     "anthropic": "claude-sonnet-5",
 }
 
-# check_models.py bir model erisilemezse sirayla bunlari dener.
-GOOGLE_FALLBACK_CHAIN = (
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-2.5-flash",
-    "gemini-3.5-flash-lite",
-)
 
 
 class ConfigError(RuntimeError):
@@ -189,5 +182,7 @@ def dayanikli(runnable, deneme: int = LLM_DENEME):
     return _Dayanikli(runnable, deneme=deneme)
 
 
-DATA_PATH = os.getenv("DATA_PATH", "data/kredi_basvurulari.csv")
-CHROMA_PATH = os.getenv("CHROMA_PATH", "chroma_store")
+# Proje kokune gore mutlak cozulur; goreli birakilsaydi calisma dizinine bagli olurdu.
+_KOK = pathlib.Path(__file__).resolve().parents[1]
+_chroma = pathlib.Path(os.getenv("CHROMA_PATH", "").strip() or "chroma_store")
+CHROMA_PATH = str(_chroma if _chroma.is_absolute() else _KOK / _chroma)

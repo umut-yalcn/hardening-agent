@@ -204,7 +204,16 @@ def ajan_kur():
         }
 
     def yonlendir(state: SertlestirmeDurumu) -> str:
-        son = state["messages"][-1]
+        mesajlar = state["messages"]
+        son = mesajlar[-1]
+
+        # Adim siniri BURADA uygulanir. Onceden yalnizca modele "yeni arac
+        # cagirma" deniyordu; model dinlemezse graf arac calistirmaya devam
+        # ediyordu. Olculdu: MAKS_ADIM=12 iken 40 arac cagrisi yapildi.
+        # Sinir artik dilek degil, yonlendirme karari.
+        if len(mesajlar) > MAKS_ADIM * 2 + 4:
+            return END
+
         if getattr(son, "tool_calls", None):
             return "araclar"
 

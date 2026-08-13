@@ -17,6 +17,8 @@ Iki fikir uzerine kurulu:
 
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 from .fleet import birlesik
@@ -36,10 +38,18 @@ _YANLIS_DEGERLER = {"false", "0", "hayir", "hayır", "no", "", "nan", "none"}
 def _bool_cevir(deger: object) -> bool:
     """Bir degeri guvenle bool'a cevirir.
 
-    Duz `if deger:` yeterli degil: CSV'den string olarak gelen "False" Python'da
-    DOGRU sayilir ve maruziyet carpani sessizce iki katina cikardi. Sessiz olmasi
-    en kotu yani - risk skoru yanlis cikar ama hicbir hata gorunmez.
+    Duz `if deger:` yeterli degil:
+      - CSV'den string olarak gelen "False" Python'da DOGRU sayilir; carpan
+        sessizce iki katina cikardi.
+      - Eksik deger (NaN) da DOGRU sayiliyordu; yani internet erisimi
+        BILINMEYEN bir sunucu, internete acik gibi puanlaniyordu. Bilinmeyen
+        icin guvenli varsayim hangisi olmali sorusu tartisilir; burada
+        "bilinmiyorsa carpani uygulama" secildi ve alan ayrica raporlanabilir.
     """
+    if deger is None:
+        return False
+    if isinstance(deger, float) and math.isnan(deger):
+        return False
     if isinstance(deger, str):
         return deger.strip().lower() not in _YANLIS_DEGERLER
     return bool(deger)
@@ -52,13 +62,22 @@ def maruziyet_carpani(sunucu: pd.Series | dict) -> float:
     yani en maruz sunucu en korunaklidan ~37 kat agir sayilir (mevcut filoda
     gorulen aralik ~27 kat). Taban 1.0'a gore en maruz sunucu ~12 kat.
     """
+    # Eksik alan COKME uretmemeli: onceden sunucu["destek_durumu"] yoksa
+    # KeyError firliyor ve tum risk araclarini dusuruyordu. Eksik alan
+    # notr (1.0) sayilir; bilinmeyen kategori degeri de oyle.
+    def al(ad: str):
+        try:
+            return sunucu[ad]
+        except (KeyError, IndexError):
+            return None
+
     c = 1.0
-    c *= ORTAM_CARPANI.get(sunucu["ortam"], 1.0)
-    c *= BOLGE_CARPANI.get(sunucu["ag_bolgesi"], 1.0)
-    c *= VERI_CARPANI.get(sunucu["veri_siniflandirmasi"], 1.0)
-    if _bool_cevir(sunucu["internet_erisimi"]):
+    c *= ORTAM_CARPANI.get(al("ortam"), 1.0)
+    c *= BOLGE_CARPANI.get(al("ag_bolgesi"), 1.0)
+    c *= VERI_CARPANI.get(al("veri_siniflandirmasi"), 1.0)
+    if _bool_cevir(al("internet_erisimi")):
         c *= INTERNET_CARPANI
-    if sunucu["destek_durumu"] == "destegi_bitti":
+    if al("destek_durumu") == "destegi_bitti":
         c *= DESTEGI_BITMIS_CARPANI
     return round(c, 3)
 

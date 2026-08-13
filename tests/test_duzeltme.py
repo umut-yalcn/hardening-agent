@@ -300,3 +300,74 @@ class TestLangChainHatalari:
                  "id": "1", "type": "tool_call"}])]}
         )
         assert isinstance(sonuc["messages"][-1], ToolMessage)
+
+
+class TestAdimSiniri:
+    """Bagimsiz denetim: adim siniri yalnizca modele SOYLENIYORDU, graf
+    tarafindan uygulanmiyordu. Model dinlemezse arac calistirmaya devam
+    ediliyordu; olculdu: sinir 12 iken 40 arac cagrisi yapildi.
+    """
+
+    def _inatci_model(self, arac_adi, adet=60):
+        from langchain_core.messages import AIMessage
+
+        class Sahte:
+            def __init__(s):
+                s.n = 0
+
+            def bind_tools(s, _):
+                return s
+
+            def with_retry(s, *a, **k):
+                return s
+
+            def invoke(s, m, *a, **k):
+                s.n += 1
+                if s.n <= adet:
+                    return AIMessage(content="", tool_calls=[
+                        {"name": arac_adi, "args": {}, "id": str(s.n), "type": "tool_call"}])
+                return AIMessage(content="son cevap")
+
+        return Sahte()
+
+    def test_sinir_asilinca_graf_durur(self, monkeypatch):
+        from langchain_core.messages import AIMessage, HumanMessage
+
+        from src import agent as A
+
+        monkeypatch.setattr(A, "get_llm", lambda *a, **k: self._inatci_model("filo_ozeti"))
+        sonuc = A.ajan_kur().invoke(
+            {"messages": [HumanMessage(content="x")], "duzeltme_denemesi": 0}
+        )
+        cagri = sum(1 for m in sonuc["messages"] if isinstance(m, AIMessage) and m.tool_calls)
+        assert cagri <= A.MAKS_ADIM * 2 + 4, f"{cagri} cagri yapildi, sinir uygulanmadi"
+
+
+class TestMaruziyetSaglamligi:
+    """Bagimsiz denetim: eksik alan KeyError firlatip risk araclarini
+    dusuruyordu; NaN internet erisimi DOGRU sayiliyordu."""
+
+    def test_eksik_alan_cokme_uretmez(self):
+        from src.scoring import maruziyet_carpani
+
+        assert maruziyet_carpani({
+            "ortam": "uretim", "ag_bolgesi": "dmz",
+            "veri_siniflandirmasi": "hassas", "internet_erisimi": False}) > 0
+
+    def test_nan_internet_acik_sayilmaz(self):
+        from src.scoring import INTERNET_CARPANI, maruziyet_carpani
+
+        temel = {"ortam": "uretim", "ag_bolgesi": "dmz",
+                 "veri_siniflandirmasi": "hassas", "destek_durumu": "destekleniyor"}
+        nan_ile = maruziyet_carpani(dict(temel, internet_erisimi=float("nan")))
+        kapali = maruziyet_carpani(dict(temel, internet_erisimi=False))
+        assert nan_ile == kapali
+        assert maruziyet_carpani(dict(temel, internet_erisimi=True)) == pytest.approx(
+            kapali * INTERNET_CARPANI)
+
+    def test_bilinmeyen_kategori_notr_sayilir(self):
+        from src.scoring import maruziyet_carpani
+
+        assert maruziyet_carpani({
+            "ortam": "yok", "ag_bolgesi": "yok", "veri_siniflandirmasi": "yok",
+            "internet_erisimi": False, "destek_durumu": "x"}) == 1.0
