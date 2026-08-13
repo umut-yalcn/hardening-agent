@@ -86,34 +86,6 @@ def birlesik() -> pd.DataFrame:
     return sonuclar().merge(sunucular(), on="host_id", how="left")
 
 
-def filtrele(
-    df: pd.DataFrame,
-    ortam: str | None = None,
-    rol: str | None = None,
-    ag_bolgesi: str | None = None,
-    yalnizca_internete_acik: bool = False,
-    bddk_maddesi: int | None = None,
-    kategori: str | None = None,
-    seviye: int | None = None,
-) -> pd.DataFrame:
-    """Ortak filtreleri tek yerde uygular."""
-    if ortam:
-        df = df[df["ortam"] == ortam]
-    if rol:
-        df = df[df["rol"] == rol]
-    if ag_bolgesi:
-        df = df[df["ag_bolgesi"] == ag_bolgesi]
-    if yalnizca_internete_acik:
-        df = df[df["internet_erisimi"]]
-    if bddk_maddesi:
-        df = df[df["bddk_maddesi"] == bddk_maddesi]
-    if kategori:
-        df = df[df["kategori"] == kategori]
-    if seviye:
-        df = df[df["seviye"] == seviye]
-    return df
-
-
 def durum_dagilimi(df: pd.DataFrame) -> dict[str, int]:
     """Uyumlu / uyumsuz / belirsiz / kapsam disi sayilarini dondurur."""
     sayim = df["durum"].value_counts().to_dict()

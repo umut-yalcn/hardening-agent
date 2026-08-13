@@ -15,7 +15,7 @@ from typing import Any
 from langchain_core.tools import tool
 
 from .controls import BDDK_BASLIK, BddkMaddesi, KONTROLLER, kontrol_getir
-from .fleet import birlesik, durum_dagilimi, filtrele, sunucular, uyum_ve_kapsam
+from .fleet import birlesik, sunucular, uyum_ve_kapsam
 from .freshness import (
     TAZELIK_ESIGI_GUN,
     filo_kapsam_ozeti,
