@@ -130,8 +130,12 @@ def _hata_metinleri(mesajlar: list[Any]) -> list[str]:
     for m in mesajlar:
         if not isinstance(m, ToolMessage):
             continue
+        icerik = str(m.content)
+        if icerik.startswith(_LANGCHAIN_HATA_ONEKLERI):
+            hatalar.append(icerik[:200])
+            continue
         try:
-            veri = json.loads(str(m.content))
+            veri = json.loads(icerik)
         except json.JSONDecodeError:
             continue
         if isinstance(veri, dict) and "hata" in veri:
@@ -290,6 +294,25 @@ DESTEKSIZ_CEVAP_UYARISI = (
 _SAYI_DESENI = re.compile(r"\d")
 
 
+#: LangChain, sema dogrulamasi basarisiz oldugunda ya da olmayan bir arac
+#: cagrildiginda kendi hata metnini duz string olarak dondurur - bizim
+#: {"hata": ...} bicimimizde degil. Bunlar JSON olarak ayristirilamadigi icin
+#: onceden BASARILI sayiliyordu; yani ajan yalnizca gecersiz cagrilar yapip
+#: cevap uydurdugunda dayanak kontrolu devreye girmiyordu.
+_LANGCHAIN_HATA_ONEKLERI = ("Error invoking tool", "Error:")
+
+
+def _arac_ciktisi_hata_mi(icerik: str) -> bool:
+    """Bir arac mesaji hata mi bildiriyor?"""
+    if icerik.startswith(_LANGCHAIN_HATA_ONEKLERI):
+        return True
+    try:
+        veri = json.loads(icerik)
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return isinstance(veri, dict) and "hata" in veri
+
+
 def _arac_ciktilarini_say(mesajlar: list[Any]) -> tuple[int, int]:
     """Kac arac cagrisinin basarili, kacinin hata dondurdugunu sayar.
 
@@ -303,14 +326,7 @@ def _arac_ciktilarini_say(mesajlar: list[Any]) -> tuple[int, int]:
     for m in mesajlar:
         if not isinstance(m, ToolMessage):
             continue
-        icerik = m.content
-        veri: Any = icerik
-        if isinstance(icerik, str):
-            try:
-                veri = json.loads(icerik)
-            except json.JSONDecodeError:
-                veri = icerik
-        if isinstance(veri, dict) and "hata" in veri:
+        if _arac_ciktisi_hata_mi(str(m.content)):
             hatali += 1
         else:
             basarili += 1

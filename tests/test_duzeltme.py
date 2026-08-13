@@ -239,3 +239,64 @@ class TestSecmeliYenidenDeneme:
         assert sarili.invoke("a") == "sonuc:a"
         # invoke disindaki cagriler sarilan nesneye devredilmeli
         assert sarili.bind_tools([]) is not None
+
+
+class TestLangChainHatalari:
+    """Regresyon: LangChain'in kendi hata mesajlari BASARILI sayiliyordu.
+
+    Sema dogrulamasi basarisiz oldugunda (ornegin yanlis arguman adi) ya da olmayan
+    bir arac cagrildiginda LangChain duz metin dondurur - bizim {"hata": ...}
+    bicimimizde degil. JSON olarak ayristirilamadigi icin dayanak sayaci bunlari
+    basarili sayiyordu; yani agent yalnizca gecersiz cagrilar yapip cevap
+    uydurdugunda duzeltme dongusu HIC tetiklenmiyordu.
+    """
+
+    def _tm(self, icerik: str):
+        from langchain_core.messages import ToolMessage
+
+        return ToolMessage(content=icerik, tool_call_id="1")
+
+    @pytest.mark.parametrize(
+        "icerik",
+        [
+            "Error invoking tool 'kontrol_durumu' with kwargs {}",
+            "Error: yok_boyle_arac is not a valid tool, try one of [list_columns]",
+        ],
+    )
+    def test_langchain_hatalari_hatali_sayilir(self, icerik):
+        from src.agent import _arac_ciktilarini_say
+
+        assert _arac_ciktilarini_say([self._tm(icerik)]) == (0, 1)
+
+    def test_langchain_hatalari_duzeltici_mesaja_girer(self):
+        from src.agent import _hata_metinleri
+
+        h = _hata_metinleri([self._tm("Error invoking tool 'x' with kwargs {}")])
+        assert len(h) == 1
+
+    def test_mesru_duz_metin_cikti_hata_sayilmaz(self):
+        """kontrol_ara duz metin donduruyor; hata degil."""
+        from src.agent import _arac_ciktilarini_say
+
+        assert _arac_ciktilarini_say([self._tm("sorgu sonucu: 3 kolon")]) == (1, 0)
+
+    def test_gecersiz_arac_argumani_graf_dusurmez(self):
+        """Sema hatasi ToolMessage'a donusmeli, istisna firlatmamali."""
+        from langchain_core.messages import AIMessage, ToolMessage
+        from langgraph.graph import END, START, MessagesState, StateGraph
+        from langgraph.prebuilt import ToolNode
+
+        from src.tools import ANALIZ_ARACLARI
+
+        g = StateGraph(MessagesState)
+        g.add_node("a", ToolNode(ANALIZ_ARACLARI))
+        g.add_edge(START, "a")
+        g.add_edge("a", END)
+
+        sonuc = g.compile().invoke(
+            {"messages": [AIMessage(content="", tool_calls=[
+                {"name": "kontrol_durumu",
+                 "args": {"yanlis_arg": 1},
+                 "id": "1", "type": "tool_call"}])]}
+        )
+        assert isinstance(sonuc["messages"][-1], ToolMessage)
