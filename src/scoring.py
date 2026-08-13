@@ -30,6 +30,21 @@ ORTAM_CARPANI = {"uretim": 1.5, "felaket_kurtarma": 1.1, "test": 0.5}
 VERI_CARPANI = {"hassas": 1.6, "dahili": 1.0, "genel": 0.8}
 
 
+_YANLIS_DEGERLER = {"false", "0", "hayir", "hayır", "no", "", "nan", "none"}
+
+
+def _bool_cevir(deger: object) -> bool:
+    """Bir degeri guvenle bool'a cevirir.
+
+    Duz `if deger:` yeterli degil: CSV'den string olarak gelen "False" Python'da
+    DOGRU sayilir ve maruziyet carpani sessizce iki katina cikardi. Sessiz olmasi
+    en kotu yani - risk skoru yanlis cikar ama hicbir hata gorunmez.
+    """
+    if isinstance(deger, str):
+        return deger.strip().lower() not in _YANLIS_DEGERLER
+    return bool(deger)
+
+
 def maruziyet_carpani(sunucu: pd.Series | dict) -> float:
     """Bir sunucunun maruziyet carpanini dondurur.
 
@@ -40,7 +55,7 @@ def maruziyet_carpani(sunucu: pd.Series | dict) -> float:
     c *= ORTAM_CARPANI.get(sunucu["ortam"], 1.0)
     c *= BOLGE_CARPANI.get(sunucu["ag_bolgesi"], 1.0)
     c *= VERI_CARPANI.get(sunucu["veri_siniflandirmasi"], 1.0)
-    if sunucu["internet_erisimi"]:
+    if _bool_cevir(sunucu["internet_erisimi"]):
         c *= INTERNET_CARPANI
     if sunucu["destek_durumu"] == "destegi_bitti":
         c *= DESTEGI_BITMIS_CARPANI

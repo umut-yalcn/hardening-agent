@@ -24,6 +24,7 @@ from src.controls import (
 from src.fleet import birlesik, durum_dagilimi, uyum_ve_kapsam
 from src.freshness import TAZELIK_ESIGI_GUN, sunucu_kapsami, yaniltici_temizler
 from src.scoring import (
+    INTERNET_CARPANI,
     kontrol_uyumsuzluk_orani,
     maruziyet_carpani,
     risk_tablosu,
@@ -135,6 +136,28 @@ class TestMaruziyet:
         }
         eol = dict(temel, destek_durumu="destegi_bitti")
         assert maruziyet_carpani(eol) > maruziyet_carpani(temel)
+
+    @pytest.mark.parametrize(
+        "deger,acik",
+        [
+            (True, True), ("True", True), ("true", True), (1, True),
+            (False, False), ("False", False), ("false", False),
+            ("0", False), ("", False), (0, False), ("hayir", False),
+        ],
+    )
+    def test_internet_erisimi_string_gelse_de_dogru_yorumlanir(self, deger, acik):
+        """Regresyon: string 'False' Python'da DOGRU sayilir.
+
+        Duz `if sunucu["internet_erisimi"]:` kullanildiginda CSV'den string
+        gelen "False" degeri carpani sessizce 2.2 kat artiriyordu. Sessiz
+        olmasi en kotu yani: risk skoru yanlis cikar, hicbir hata gorunmez.
+        """
+        temel = {
+            "ortam": "test", "ag_bolgesi": "ic_ag", "veri_siniflandirmasi": "genel",
+            "destek_durumu": "destekleniyor", "internet_erisimi": deger,
+        }
+        beklenen = 0.4 * (INTERNET_CARPANI if acik else 1.0)
+        assert maruziyet_carpani(temel) == pytest.approx(beklenen)
 
     def test_en_korunakli_sunucu_carpani_birden_kucuk(self):
         korunakli = {
