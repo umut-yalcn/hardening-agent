@@ -23,7 +23,7 @@ from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from .catalog import KATALOG_ARACLARI
-from .config import get_llm
+from .config import dayanikli, get_llm
 from .freshness import TAZELIK_ESIGI_GUN, YETERLI_KAPSAM
 from .tools import ANALIZ_ARACLARI
 
@@ -167,7 +167,7 @@ def _duzeltici_mesaj(hatalar: list[str]) -> str:
 
 def ajan_kur():
     """Derlenmis LangGraph akisini dondurur."""
-    llm = get_llm().bind_tools(TUM_ARACLAR)
+    llm = dayanikli(get_llm().bind_tools(TUM_ARACLAR))
 
     def modeli_cagir(state: SertlestirmeDurumu) -> dict[str, Any]:
         mesajlar = state["messages"]
@@ -179,7 +179,7 @@ def ajan_kur():
                     "bulgularla cevabini yaz, yeni arac cagrisi yapma."
                 )
             ]
-            return {"messages": [get_llm().invoke([SystemMessage(SISTEM_PROMPTU)] + mesajlar)]}
+            return {"messages": [dayanikli(get_llm()).invoke([SystemMessage(SISTEM_PROMPTU)] + mesajlar)]}
 
         return {"messages": [llm.invoke([SystemMessage(SISTEM_PROMPTU)] + mesajlar)]}
 
@@ -267,7 +267,7 @@ def _dogrula(cevap: str, arac_ciktilari: list[str]) -> dict[str, Any]:
     )
 
     try:
-        yanit = get_llm().invoke(
+        yanit = dayanikli(get_llm()).invoke(
             [SystemMessage(DOGRULAMA_PROMPTU), HumanMessage(content=istem)]
         )
         ham = _metin_cikar(yanit.content).strip()
