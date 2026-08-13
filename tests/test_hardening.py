@@ -175,6 +175,168 @@ class TestMaruziyet:
 
 
 # --------------------------------------------------------------------------
+class TestJsonGuvenligi:
+    """Regresyon: arac ciktisindaki NaN, ajani komple dusuruyordu.
+
+    kapsam_raporu, hic gozlemlenen kontrolu olmayan bir sunucu icin uyum_orani
+    olarak pandas NaN donduruyordu. Python'un json.dumps'i NaN'a izin verip
+    literal `NaN` yaziyor - ama bu gecerli JSON DEGIL. Model saglayicisi
+    istegin tamamini reddetti:
+
+        400 INVALID_ARGUMENT: Invalid JSON payload received. Unexpected token.
+        : 61, "uyum_orani": NaN, "kapsam_orani":
+
+    json.dumps hata vermedigi icin onceki testler bunu kacirdi; kati modda
+    (allow_nan=False) test etmek gerekiyor.
+    """
+
+    ARAC_GIRDILERI = [
+        ("filo_ozeti", {}),
+        ("kapsam_raporu", {"yalnizca_yaniltici": False}),
+        ("kapsam_raporu", {"yalnizca_yaniltici": True}),
+        ("risk_siralamasi", {"sunucu_bazinda": True, "limit": 50}),
+        ("risk_siralamasi", {"limit": 50}),
+        ("sunucu_durumu", {"host_id": "srv-002"}),
+        ("sunucu_listesi", {}),
+        ("bddk_bosluk_analizi", {}),
+        ("uyum_kirilimi", {"boyut": "ortam"}),
+        ("kontrol_durumu", {"kontrol_id": "5.2.12"}),
+    ]
+
+    @pytest.mark.parametrize("arac_adi,girdi", ARAC_GIRDILERI)
+    def test_arac_ciktisi_kati_json(self, arac_adi, girdi):
+        import json
+
+        from src.tools import ANALIZ_ARACLARI
+
+        arac = next(t for t in ANALIZ_ARACLARI if t.name == arac_adi)
+        json.dumps(arac.invoke(girdi), allow_nan=False)
+
+    def test_temizleyici_nan_ve_sonsuzlugu_cevirir(self):
+        from src.tools import _json_guvenli
+
+        girdi = {"a": float("nan"), "b": [1.0, float("inf")], "c": {"d": float("-inf")}}
+        assert _json_guvenli(girdi) == {"a": None, "b": [1.0, None], "c": {"d": None}}
+
+    def test_temizleyici_normal_degerlere_dokunmaz(self):
+        from src.tools import _json_guvenli
+
+        girdi = {"a": 1.5, "b": [1, "x", True, None], "c": {"d": 0.0}}
+        assert _json_guvenli(girdi) == girdi
+
+    def test_liste_kesmesi_bildirilir(self):
+        """Regresyon: sunucu_listesi 63 sayar, 40 kayit dondururdu - sessizce.
+
+        Ajan donen kayitlari sayarak cikarim yaparsa yanilir. Gozlenen kosumda
+        ajan bu yuzden araci 9 kez cagirmak zorunda kaldi ve dogrulama modeli
+        (dogru olan) sayilari "uydurulmus" diye isaretledi.
+        """
+        from src.tools import LISTE_SINIRI, sunucu_listesi
+
+        r = sunucu_listesi.invoke({"ortam": "uretim"})
+        assert r["sunucu_sayisi"] > LISTE_SINIRI
+        assert r["kesildi"] is True
+        assert r["donen_kayit_sayisi"] == LISTE_SINIRI
+        assert len(r["sunucular"]) == LISTE_SINIRI
+        assert "not" in r
+
+    def test_kesilmeyen_listede_uyari_yok(self):
+        from src.tools import LISTE_SINIRI, sunucu_listesi
+
+        r = sunucu_listesi.invoke({"ortam": "test"})
+        assert r["sunucu_sayisi"] <= LISTE_SINIRI
+        assert r["kesildi"] is False
+        assert r["donen_kayit_sayisi"] == len(r["sunucular"])
+
+    def test_kapsam_raporu_ortam_kirilimi_verir(self):
+        """Ajan sunucu listelerini elle saymak zorunda kalmamali."""
+        from src.freshness import sunucu_kapsami
+        from src.tools import kapsam_raporu
+
+        r = kapsam_raporu.invoke({"yalnizca_yaniltici": False})
+        kirilim = r["ortam_kirilimi"]
+        assert kirilim
+
+        tablo = sunucu_kapsami()
+        for satir in kirilim:
+            grup = tablo[tablo["ortam"] == satir["ortam"]]
+            assert satir["sunucu_sayisi"] == len(grup)
+            assert satir["bayat_denetimli"] == int(grup["bayat"].sum())
+
+        assert sum(s["bayat_denetimli"] for s in kirilim) == r["ozet"]["bayat_denetimli_sunucu"]
+
+    def test_arac_aciklamalari_korundu(self):
+        """Temizleyici dekoratoru @tool'un gordugu docstring'i bozmamali."""
+        from src.tools import ANALIZ_ARACLARI
+
+        for t in ANALIZ_ARACLARI:
+            assert t.description, f"{t.name} aciklamasini kaybetti"
+
+
+# --------------------------------------------------------------------------
+class TestDayanakKontrolu:
+    """Ajan, arac hatasi aldiginda cevabi uydurabiliyor.
+
+    Kardes projede gozlenen gercek davranis: ajan olmayan bir kolon adiyla
+    cagri yapti, guard reddetti, ajan duzeltmek yerine sayi uydurdu.
+    Dogrulama modeli bunu yakalayabilir ama o bir model cagrisi - dusebilir,
+    kota nedeniyle kapatilmis olabilir. Bu sayim deterministik.
+    """
+
+    def _tm(self, icerik: str):
+        from langchain_core.messages import ToolMessage
+
+        return ToolMessage(content=icerik, tool_call_id="1")
+
+    def test_hata_ciktisi_hatali_sayilir(self):
+        from src.agent import _arac_ciktilarini_say
+
+        assert _arac_ciktilarini_say([self._tm('{"hata": "Bilinmeyen kontrol"}')]) == (0, 1)
+
+    def test_basarili_cikti_sayilir(self):
+        from src.agent import _arac_ciktilarini_say
+
+        assert _arac_ciktilarini_say([self._tm('{"kontrol_id": "5.2.12"}')]) == (1, 0)
+
+    def test_arac_yoksa_sifir(self):
+        from src.agent import _arac_ciktilarini_say
+
+        assert _arac_ciktilarini_say([]) == (0, 0)
+
+    def test_gercek_arac_ciktilariyla_sayim(self):
+        """ToolNode dict'i JSON'a ceviriyor; sayim gercek yolda da dogru olmali."""
+        from langchain_core.messages import AIMessage
+        from langgraph.graph import END, START, MessagesState, StateGraph
+        from langgraph.prebuilt import ToolNode
+
+        from src.agent import _arac_ciktilarini_say
+        from src.tools import ANALIZ_ARACLARI
+
+        graf = StateGraph(MessagesState)
+        graf.add_node("a", ToolNode(ANALIZ_ARACLARI))
+        graf.add_edge(START, "a")
+        graf.add_edge("a", END)
+        app = graf.compile()
+
+        sonuc = app.invoke(
+            {
+                "messages": [
+                    AIMessage(
+                        content="",
+                        tool_calls=[
+                            {"name": "kontrol_durumu", "args": {"kontrol_id": "5.2.12"},
+                             "id": "1", "type": "tool_call"},
+                            {"name": "kontrol_durumu", "args": {"kontrol_id": "YOK-9999"},
+                             "id": "2", "type": "tool_call"},
+                        ],
+                    )
+                ]
+            }
+        )
+        assert _arac_ciktilarini_say(sonuc["messages"]) == (1, 1)
+
+
+# --------------------------------------------------------------------------
 class TestRiskHesabi:
     def test_uyumlu_satir_risk_uretmez(self):
         r = risk_tablosu()

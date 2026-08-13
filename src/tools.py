@@ -8,6 +8,8 @@ Ajan isterse bunu gormezden gelemez, cunku sayiyi kendisi hesaplamiyor.
 
 from __future__ import annotations
 
+import math
+from functools import wraps
 from typing import Any
 
 from langchain_core.tools import tool
@@ -22,13 +24,49 @@ from .freshness import (
 )
 from .scoring import bulgu_siralamasi, maruziyet_carpani, sunucu_riski
 
+LISTE_SINIRI = 40
+
 BOYUTLAR = (
     "ortam", "rol", "ag_bolgesi", "isletim_sistemi",
     "destek_durumu", "veri_siniflandirmasi", "kategori", "bddk_maddesi", "seviye",
 )
 
 
+def _json_guvenli(deger: Any) -> Any:
+    """NaN ve sonsuzlugu None'a cevirir.
+
+    pandas, "deger yok"u NaN olarak tasir; DataFrame.to_dict("records") bunu
+    oldugu gibi disari verir. Python'un json.dumps'i NaN'a izin verip literal
+    `NaN` yazar - ama bu GECERLI JSON DEGILDIR. Sonuc: model saglayicisi
+    istegin tamamini 400 ile reddediyor ve ajan komple duser.
+
+    Gozlenen hata:
+        Invalid JSON payload received. Unexpected token.
+        : 61, "uyum_orani": NaN, "kapsam_orani":
+
+    Bu yuzden temizlik arac sinirinda yapiliyor - her cikti buradan gecer.
+    """
+    if isinstance(deger, float):
+        return None if (math.isnan(deger) or math.isinf(deger)) else deger
+    if isinstance(deger, dict):
+        return {k: _json_guvenli(v) for k, v in deger.items()}
+    if isinstance(deger, (list, tuple)):
+        return [_json_guvenli(v) for v in deger]
+    return deger
+
+
+def _temiz_cikti(fn):
+    """Aracin dondurdugu yapiyi JSON-guvenli hale getirir."""
+
+    @wraps(fn)
+    def sarmalayici(*args, **kwargs):
+        return _json_guvenli(fn(*args, **kwargs))
+
+    return sarmalayici
+
+
 @tool
+@_temiz_cikti
 def filo_ozeti() -> dict[str, Any]:
     """Sunucu filosunun genel durumunu dondurur.
 
@@ -59,6 +97,7 @@ def filo_ozeti() -> dict[str, Any]:
 
 
 @tool
+@_temiz_cikti
 def kontrol_durumu(kontrol_id: str) -> dict[str, Any]:
     """Tek bir kontrolun filo genelindeki durumunu dondurur.
 
@@ -95,6 +134,7 @@ def kontrol_durumu(kontrol_id: str) -> dict[str, Any]:
 
 
 @tool
+@_temiz_cikti
 def sunucu_durumu(host_id: str) -> dict[str, Any]:
     """Tek bir sunucunun sertlestirme durumunu dondurur.
 
@@ -133,6 +173,7 @@ def sunucu_durumu(host_id: str) -> dict[str, Any]:
 
 
 @tool
+@_temiz_cikti
 def uyum_kirilimi(boyut: str, yalnizca_internete_acik: bool = False) -> dict[str, Any]:
     """Uyum ve kapsam oranlarini bir boyuta gore kirar.
 
@@ -174,6 +215,7 @@ def uyum_kirilimi(boyut: str, yalnizca_internete_acik: bool = False) -> dict[str
 
 
 @tool
+@_temiz_cikti
 def bddk_bosluk_analizi(madde: int | None = None) -> dict[str, Any]:
     """BDDK maddesi bazinda uyum bosluklarini dondurur.
 
@@ -223,6 +265,7 @@ def bddk_bosluk_analizi(madde: int | None = None) -> dict[str, Any]:
 
 
 @tool
+@_temiz_cikti
 def risk_siralamasi(limit: int = 10, sunucu_bazinda: bool = False) -> dict[str, Any]:
     """Bulgulari maruziyete gore agirliklandirip siralar.
 
@@ -256,6 +299,7 @@ def risk_siralamasi(limit: int = 10, sunucu_bazinda: bool = False) -> dict[str, 
 
 
 @tool
+@_temiz_cikti
 def kapsam_raporu(yalnizca_yaniltici: bool = False) -> dict[str, Any]:
     """Denetim verisinin ne kadarinin gercekten okunabildigini raporlar.
 
@@ -283,13 +327,34 @@ def kapsam_raporu(yalnizca_yaniltici: bool = False) -> dict[str, Any]:
 
     tablo = sunucu_kapsami()
     sorunlu = tablo[~tablo["hukum_verilebilir"]].sort_values("kapsam_orani")
+
+    # Boyut kirilimi burada uretiliyor ki ajan sunucu listelerini elle sayarak
+    # cikarim yapmak zorunda kalmasin - o yol hem kirilgan hem de kesme
+    # sinirina takiliyor.
+    kirilim = []
+    for ortam, grup in tablo.groupby("ortam"):
+        kirilim.append(
+            {
+                "ortam": ortam,
+                "sunucu_sayisi": len(grup),
+                "bayat_denetimli": int(grup["bayat"].sum()),
+                "yetersiz_kapsamli": int((~grup["yeterli_kapsam"]).sum()),
+                "hukum_verilebilir": int(grup["hukum_verilebilir"].sum()),
+                "bayat_orani": round(float(grup["bayat"].mean()), 4),
+            }
+        )
+    kirilim.sort(key=lambda r: r["bayat_orani"], reverse=True)
+
     return {
         "ozet": ozet,
+        "ortam_kirilimi": kirilim,
+        "hukum_verilemeyen_sunucu_sayisi": len(sorunlu),
         "hukum_verilemeyen_sunucular": sorunlu.head(25).to_dict("records"),
     }
 
 
 @tool
+@_temiz_cikti
 def sunucu_listesi(
     ortam: str | None = None,
     rol: str | None = None,
@@ -327,10 +392,26 @@ def sunucu_listesi(
         "isletim_sistemi", "os_surum", "destek_durumu",
         "veri_siniflandirmasi", "son_denetim_gun_once",
     ]
-    return {
+
+    # Kesme SESSIZ olmamali. Onceden "sunucu_sayisi: 63" dondurulup yalnizca 40
+    # kayit veriliyordu; ajan listeyi tam sanip sayarsa yanlis sonuca varir.
+    # Gozlenen kosumda ajan bu yuzden sunucu_listesi'ni 9 kez cagirmak zorunda
+    # kaldi ve dogrulama modeli sayilari "uydurulmus" diye isaretledi.
+    kesildi = len(s) > LISTE_SINIRI
+    cikti: dict[str, Any] = {
         "sunucu_sayisi": len(s),
-        "sunucular": s[kolonlar].head(40).to_dict("records"),
+        "donen_kayit_sayisi": min(len(s), LISTE_SINIRI),
+        "kesildi": kesildi,
+        "sunucular": s[kolonlar].head(LISTE_SINIRI).to_dict("records"),
     }
+    if kesildi:
+        cikti["not"] = (
+            f"Filtreye {len(s)} sunucu uyuyor ancak yalnizca ilk {LISTE_SINIRI} kaydi "
+            "dondurulur. Donen kayitlari SAYARAK sonuc cikarma; toplam icin "
+            "sunucu_sayisi alanini kullan, kirilim icin uyum_kirilimi ya da "
+            "kapsam_raporu araclarini cagir."
+        )
+    return cikti
 
 
 ANALIZ_ARACLARI = [

@@ -15,6 +15,7 @@ gizlenmez; cevabin yanina uyari olarak yazilir.
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
@@ -171,6 +172,41 @@ def _dogrula(cevap: str, arac_ciktilari: list[str]) -> dict[str, Any]:
         }
 
 
+DESTEKSIZ_CEVAP_UYARISI = (
+    "[DAYANAKSIZ CEVAP] Bu soruya hicbir arac cagrisi basarili sonuc dondurmedi. "
+    "Asagidaki metin veriye dayanmiyor; icindeki sayilara guvenilmemelidir."
+)
+
+_SAYI_DESENI = re.compile(r"\d")
+
+
+def _arac_ciktilarini_say(mesajlar: list[Any]) -> tuple[int, int]:
+    """Kac arac cagrisinin basarili, kacinin hata dondurdugunu sayar.
+
+    Araclar hatalarini istisna yerine {"hata": ...} olarak donduruyor - ajanin
+    plan degistirebilmesi icin. Ama bu, hatanin sessizce yutulabilmesi demek:
+    ajan hatayi gorup duzeltmek yerine cevabi uydurabilir. Kardes projede
+    gozlenen davranis tam olarak buydu. Dogrulama modeli bunu yakalayabilir
+    ama modele bagli; bu sayim deterministik.
+    """
+    basarili = hatali = 0
+    for m in mesajlar:
+        if not isinstance(m, ToolMessage):
+            continue
+        icerik = m.content
+        veri: Any = icerik
+        if isinstance(icerik, str):
+            try:
+                veri = json.loads(icerik)
+            except json.JSONDecodeError:
+                veri = icerik
+        if isinstance(veri, dict) and "hata" in veri:
+            hatali += 1
+        else:
+            basarili += 1
+    return basarili, hatali
+
+
 def sor(soru: str, dogrula: bool = True) -> dict[str, Any]:
     """Bir soruyu uctan uca calistirir."""
     ajan = ajan_kur()
@@ -189,11 +225,22 @@ def sor(soru: str, dogrula: bool = True) -> dict[str, Any]:
         str(m.content) for m in sonuc["messages"] if isinstance(m, ToolMessage)
     ]
 
+    basarili, hatali = _arac_ciktilarini_say(sonuc["messages"])
+
+    # Kod yolunda dayanak kontrolu. Dogrulama modeli de bunu yakalayabilir ama
+    # o bir model cagrisi - dusebilir, yanilabilir, kota nedeniyle kapatilmis
+    # olabilir. Bu sayim her kosulda calisir.
+    dayanaksiz = basarili == 0 and bool(_SAYI_DESENI.search(cevap))
+    if dayanaksiz:
+        cevap = f"{DESTEKSIZ_CEVAP_UYARISI}\n\n{cevap}"
+
     cikti = {
         "soru": soru,
         "cevap": cevap,
         "kullanilan_araclar": arac_cagrilari,
         "adim_sayisi": len(sonuc["messages"]),
+        "arac_ozeti": {"basarili": basarili, "hatali": hatali},
+        "dayanaksiz_cevap": dayanaksiz,
     }
 
     if dogrula:

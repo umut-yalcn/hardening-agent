@@ -25,8 +25,10 @@ def main() -> int:
     print(f"\nSORU: {sonuc['soru']}\n")
     print(sonuc["cevap"])
 
+    ozet = sonuc.get("arac_ozeti", {})
     araclar = sonuc["kullanilan_araclar"]
-    print(f"\n--- {len(araclar)} arac cagrisi ---")
+    print(f"\n--- {len(araclar)} arac cagrisi "
+          f"({ozet.get('basarili', 0)} basarili, {ozet.get('hatali', 0)} hatali) ---")
     for a in araclar:
         print(f"  {a['arac']}({a['girdi']})")
 
