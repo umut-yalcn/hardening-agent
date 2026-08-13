@@ -20,7 +20,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.graph import END, START, MessagesState, StateGraph
-from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.prebuilt import ToolNode
 
 from .catalog import KATALOG_ARACLARI
 from .config import get_llm
@@ -86,11 +86,90 @@ Yalnizca su JSON'u dondur, baska hicbir sey yazma:
 Sorun yoksa "sorunlar" bos liste olsun."""
 
 
+#: Ajan cevabi uydurmaya kalktiginda kac kez geri gonderilecegi.
+#: Sinir SART: yoksa arac duser -> model yeniden yazar -> yine duser dongusu olusur.
+MAKS_DUZELTME = 2
+
+#: Hata tipine gore ne yapmasi gerektigini SOYLEYEN yonlendirmeler.
+#: Genel bir "hatani duzelt" mesaji, somut bir talimat kadar ise yaramiyor.
+_DUZELTICI_YONLENDIRME: tuple[tuple[str, str], ...] = (
+    (
+        "Bilinmeyen kontrol",
+        "Kontrol kimligini uydurdun ya da yanlis yazdin. kontrol_ara ile aradigin "
+        "konuyu dogal dilde ara, donen kimligi aynen kullanarak TEKRAR cagir.",
+    ),
+    (
+        "Bilinmeyen sunucu",
+        "Sunucu kimligi yanlis. sunucu_listesi ile mevcut sunuculari gor ve "
+        "dogru host_id ile tekrar dene.",
+    ),
+    (
+        "Gecersiz boyut",
+        "Gecerli boyutlardan birini sec ve uyum_kirilimi'ni tekrar cagir.",
+    ),
+    (
+        "Gecersiz madde",
+        "BDDK maddesi 11, 13, 14, 15 veya 16 olabilir. Dogru madde ile tekrar dene.",
+    ),
+    (
+        "Internete acik sunucu bulunamadi",
+        "Bu filtreyle sonuc yok. Filtreyi kaldirip tekrar dene.",
+    ),
+)
+
+
+class SertlestirmeDurumu(MessagesState):
+    """Mesajlara ek olarak kac kez duzeltmeye gonderildigini tasir."""
+
+    duzeltme_denemesi: int
+
+
+def _hata_metinleri(mesajlar: list[Any]) -> list[str]:
+    """Arac mesajlarindaki hata aciklamalarini toplar."""
+    hatalar = []
+    for m in mesajlar:
+        if not isinstance(m, ToolMessage):
+            continue
+        try:
+            veri = json.loads(str(m.content))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(veri, dict) and "hata" in veri:
+            hatalar.append(str(veri["hata"]))
+    return hatalar
+
+
+def _duzeltici_mesaj(hatalar: list[str]) -> str:
+    """Hata tipine gore somut bir yonlendirme uretir."""
+    yonergeler = []
+    for hata in hatalar:
+        for anahtar, yonerge in _DUZELTICI_YONLENDIRME:
+            if anahtar in hata and yonerge not in yonergeler:
+                yonergeler.append(yonerge)
+
+    if not yonergeler:
+        yonergeler.append(
+            "Cagrini gozden gecir ve duzelterek tekrar dene; kontrol kimligini "
+            "bilmiyorsan once kontrol_ara ile ara."
+        )
+
+    return (
+        "DUR. Hicbir arac cagrin basarili sonuc dondurmedi, dolayisiyla elinde "
+        "hicbir veri yok. Bu durumda sayi veremezsin - verdigin her sayi "
+        "uydurma olur.\n\n"
+        "Alinan hatalar:\n"
+        + "\n".join(f"  - {h}" for h in hatalar[-3:])
+        + "\n\nSimdi yapman gereken:\n"
+        + "\n".join(f"  - {y}" for y in yonergeler)
+        + "\n\nDuzeltemiyorsan cevap uydurma; soruyu neden yanitlayamadigini soyle."
+    )
+
+
 def ajan_kur():
     """Derlenmis LangGraph akisini dondurur."""
     llm = get_llm().bind_tools(TUM_ARACLAR)
 
-    def modeli_cagir(state: MessagesState) -> dict[str, Any]:
+    def modeli_cagir(state: SertlestirmeDurumu) -> dict[str, Any]:
         mesajlar = state["messages"]
         # Adim siniri: ajan donguye girerse elindekiyle sonlandirmasini iste.
         if len(mesajlar) > MAKS_ADIM * 2:
@@ -104,13 +183,44 @@ def ajan_kur():
 
         return {"messages": [llm.invoke([SystemMessage(SISTEM_PROMPTU)] + mesajlar)]}
 
-    graf = StateGraph(MessagesState)
+    def duzeltmeye_gonder(state: SertlestirmeDurumu) -> dict[str, Any]:
+        """Ajani, hatayi duzeltip tekrar denemeye zorlar.
+
+        Bu ICSEL bir oz-elestiri degil: modele kendi cevabini degerlendirmesini
+        soylemiyoruz. Arac katmaninin urettigi somut, deterministik hata
+        mesajini geri veriyoruz. Arastirma bu ayrimda net - modeller dis geri
+        bildirim olmadan kendi hatalarini duzeltemiyor, dis geri bildirimle
+        duzeltebiliyor. Dogrulama modelinden farki da bu: o bir model cagrisi,
+        bu deterministik bir kod yolu.
+        """
+        hatalar = _hata_metinleri(state["messages"])
+        return {
+            "messages": [HumanMessage(content=_duzeltici_mesaj(hatalar))],
+            "duzeltme_denemesi": state.get("duzeltme_denemesi", 0) + 1,
+        }
+
+    def yonlendir(state: SertlestirmeDurumu) -> str:
+        son = state["messages"][-1]
+        if getattr(son, "tool_calls", None):
+            return "araclar"
+
+        basarili, hatali = _arac_ciktilarini_say(state["messages"])
+        deneme = state.get("duzeltme_denemesi", 0)
+        if basarili == 0 and hatali > 0 and deneme < MAKS_DUZELTME:
+            return "duzeltme"
+        return END
+
+    graf = StateGraph(SertlestirmeDurumu)
     graf.add_node("ajan", modeli_cagir)
     graf.add_node("araclar", ToolNode(TUM_ARACLAR))
+    graf.add_node("duzeltme", duzeltmeye_gonder)
 
     graf.add_edge(START, "ajan")
-    graf.add_conditional_edges("ajan", tools_condition, {"tools": "araclar", END: END})
+    graf.add_conditional_edges(
+        "ajan", yonlendir, {"araclar": "araclar", "duzeltme": "duzeltme", END: END}
+    )
     graf.add_edge("araclar", "ajan")
+    graf.add_edge("duzeltme", "ajan")
 
     return graf.compile()
 
@@ -210,7 +320,9 @@ def _arac_ciktilarini_say(mesajlar: list[Any]) -> tuple[int, int]:
 def sor(soru: str, dogrula: bool = True) -> dict[str, Any]:
     """Bir soruyu uctan uca calistirir."""
     ajan = ajan_kur()
-    sonuc = ajan.invoke({"messages": [HumanMessage(content=soru)]})
+    sonuc = ajan.invoke(
+        {"messages": [HumanMessage(content=soru)], "duzeltme_denemesi": 0}
+    )
 
     son: AIMessage = sonuc["messages"][-1]
     cevap = _metin_cikar(son.content)
@@ -240,6 +352,7 @@ def sor(soru: str, dogrula: bool = True) -> dict[str, Any]:
         "kullanilan_araclar": arac_cagrilari,
         "adim_sayisi": len(sonuc["messages"]),
         "arac_ozeti": {"basarili": basarili, "hatali": hatali},
+        "duzeltme_denemesi": sonuc.get("duzeltme_denemesi", 0),
         "dayanaksiz_cevap": dayanaksiz,
     }
 

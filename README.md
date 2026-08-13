@@ -156,6 +156,39 @@ $ python cli.py "Filoda uyumlu görünen ama aslında durumu bilinmeyen sunucu v
 Ajan doğru sunucuyu bulmuştu; ama kendi kuralını ihlal etmiş ve desteklenmeyen
 bir düzenleyici atıf eklemişti. Doğrulama bunu kullanıcıdan gizlemiyor.
 
+**Dürüst not:** Bu katman muhafazakâr. Bir koşumda ajanın *doğru* sayılarını
+"uydurulmuş" diye işaretledi — literatürde belgelenmiş bir eğilim; LLM
+denetçileri güvenlik değerlendirmesinde yanlış-pozitife belirgin biçimde
+meyilli. O yüzden doğrulama tek savunma değil, en üstteki katman.
+
+### Zorunlu düzeltme — modele değil, koda güvenen katman
+
+Doğrulama bir model çağrısıdır: düşebilir, yanılabilir, kota nedeniyle kapalı
+olabilir. Bu yüzden altında **deterministik** bir katman var.
+
+Ajan, arkasında hiçbir başarılı araç çıktısı olmadan cevap yazmaya kalkarsa
+akış onu `END`'e bırakmaz; araç hatasını somut bir yönlendirmeyle geri verip
+tekrar denemeye zorlar:
+
+```
+DUR. Hiçbir araç çağrın başarılı sonuç döndürmedi, elinde hiçbir veri yok.
+
+Alınan hatalar:
+  - "Bilinmeyen kontrol: SSH-ROOT-1". Katalogda 61 kontrol var.
+
+Şimdi yapman gereken:
+  - Kontrol kimliğini uydurdun ya da yanlış yazdın. kontrol_ara ile aradığın
+    konuyu doğal dilde ara, dönen kimliği aynen kullanarak TEKRAR çağır.
+```
+
+Dayanağı araştırma: modeller **içsel** öz-eleştiriyle (dış girdi olmadan) kendi
+hatalarını düzeltemiyor, ama **dışsal** geri bildirimle (derleyici/araç hatası)
+düzeltebiliyor. Buradaki geri bildirim araç katmanından geliyor — deterministik.
+
+Sonsuz döngüyü önlemek için deneme sayacı zorunlu (`MAKS_DUZELTME = 2`);
+tükenirse cevap `[DAYANAKSIZ CEVAP]` etiketlenir. Döngü, gerçek model
+çağrılmadan sahte bir modelle test ediliyor (`tests/test_duzeltme.py`).
+
 ---
 
 ## Gerçek çıktı
@@ -252,7 +285,7 @@ Parola deneme sınırı hangi sunucularda tanımlı değil?
 ## Doğrulama — API anahtarı gerekmez
 
 ```bash
-pytest tests/ -q                  # 55 passed
+pytest tests/ -q                  # 66 passed
 python scripts/demo_posture.py    # analiz katmanını canlı gösterir
 ```
 

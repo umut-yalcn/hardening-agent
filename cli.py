@@ -25,6 +25,10 @@ def main() -> int:
     print(f"\nSORU: {sonuc['soru']}\n")
     print(sonuc["cevap"])
 
+    if sonuc.get("duzeltme_denemesi"):
+        print(f"\nDuzeltmeye geri gonderme: {sonuc['duzeltme_denemesi']} kez "
+              "(dayanaksiz cevap yazmaya kalkisti)")
+
     ozet = sonuc.get("arac_ozeti", {})
     araclar = sonuc["kullanilan_araclar"]
     print(f"\n--- {len(araclar)} arac cagrisi "
