@@ -24,7 +24,7 @@ from .freshness import (
     sunucu_kapsami,
     yaniltici_temizler,
 )
-from .scoring import bulgu_siralamasi, maruziyet_carpani, sunucu_riski
+from .scoring import _bool_cevir, bulgu_siralamasi, maruziyet_carpani, sunucu_riski
 
 LISTE_SINIRI = 40
 
@@ -169,7 +169,9 @@ def sunucu_durumu(host_id: str) -> dict[str, Any]:
         "ortam": ilk["ortam"],
         "rol": ilk["rol"],
         "ag_bolgesi": ilk["ag_bolgesi"],
-        "internet_erisimi": bool(ilk["internet_erisimi"]),
+        # bool(nan) True'dur: maruziyet_carpani NaN'i False sayarken burasi
+        # True sayiyordu, ayni sunucu iki katmanda ters yorumlaniyordu.
+        "internet_erisimi": _bool_cevir(ilk["internet_erisimi"]),
         "veri_siniflandirmasi": ilk["veri_siniflandirmasi"],
         "isletim_sistemi": f"{ilk['isletim_sistemi']} {ilk['os_surum']}",
         "destek_durumu": ilk["destek_durumu"],
@@ -416,6 +418,9 @@ def sunucu_listesi(
         "kesildi": kesildi,
         "sunucular": s[kolonlar].head(LISTE_SINIRI).to_dict("records"),
     }
+    # "not" anahtari KOSULSUZ bulunuyor: yalnizca kesilme halinde eklenince
+    # agent alanin varligina guvenemiyor, bazen var bazen yok oluyordu.
+    cikti["not"] = ""
     if kesildi:
         cikti["not"] = (
             f"Filtreye {len(s)} sunucu uyuyor ancak yalnizca ilk {LISTE_SINIRI} kaydi "

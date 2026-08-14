@@ -35,7 +35,11 @@ def sunucu_kapsami(df: pd.DataFrame | None = None) -> pd.DataFrame:
     satirlar = []
     for host_id, grup in df.groupby("host_id"):
         m = uyum_ve_kapsam(grup)
-        gun = int(grup["son_denetim_gun_once"].iloc[0])
+        # int(NaN) ValueError firlatir ve TUM ajan kosumunu dusururdu:
+        # sunucu_kapsami'yi kapsam_raporu cagiriyor, onu da her arac.
+        # Bozuk tek bir satir yuzunden analizin tamami olmemeli.
+        ham_gun = grup["son_denetim_gun_once"].iloc[0]
+        gun = None if pd.isna(ham_gun) else int(ham_gun)
         satirlar.append(
             {
                 "host_id": host_id,
@@ -43,7 +47,11 @@ def sunucu_kapsami(df: pd.DataFrame | None = None) -> pd.DataFrame:
                 "ag_bolgesi": grup["ag_bolgesi"].iloc[0],
                 "internet_erisimi": bool(grup["internet_erisimi"].iloc[0]),
                 "son_denetim_gun_once": gun,
-                "bayat": gun > TAZELIK_ESIGI_GUN,
+                # Denetim yasi BILINMIYORSA taze SAYILMAZ. Guvenlik
+                # tarafinda bilinmeyen, iyi haber degildir: "son taramanin ne
+                # zaman oldugunu bilmiyoruz" ile "dun tarandi" ayni sonuca
+                # cikamaz. Bu yuzden fail-closed.
+                "bayat": True if gun is None else gun > TAZELIK_ESIGI_GUN,
                 "uygulanabilir_kontrol": m["uygulanabilir_kontrol"],
                 "gozlemlenen_kontrol": m["gozlemlenen_kontrol"],
                 "belirsiz_kontrol": m["belirsiz_kontrol"],
@@ -104,6 +112,12 @@ def filo_kapsam_ozeti(df: pd.DataFrame | None = None) -> dict:
         "tazelik_esigi_gun": TAZELIK_ESIGI_GUN,
         "yeterli_kapsam_esigi": YETERLI_KAPSAM,
         "ortalama_kapsam_orani": round(float(tablo["kapsam_orani"].mean()), 4),
-        "en_bayat_gun": int(tablo["son_denetim_gun_once"].max()),
+        # Yasi bilinmeyen sunucular max()'a girmez; hepsi bilinmiyorsa
+        # sayi UYDURULMAZ, None dondurulur.
+        "en_bayat_gun": (
+            None
+            if tablo["son_denetim_gun_once"].dropna().empty
+            else int(tablo["son_denetim_gun_once"].dropna().max())
+        ),
         "yaniltici_temiz_sunucu": len(yaniltici_temizler(df)),
     }

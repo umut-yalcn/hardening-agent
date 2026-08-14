@@ -293,6 +293,10 @@ def _dogrulama_semasi(ham: Any) -> dict[str, Any]:
     if isinstance(deger, str):
         kucuk = deger.strip().lower()
         deger = True if kucuk in _DOGRU_METINLER else (False if kucuk in _YANLIS_METINLER else None)
+    elif isinstance(deger, int):
+        # Bazi modeller JSON'da boolean yerine 1/0 yaziyor. Bunu "belirsiz"
+        # saymak DOGRULANMIS bir cevabi CLI'da "CALISTIRILAMADI" gosteriyordu.
+        deger = bool(deger)
     elif not isinstance(deger, bool):
         deger = None
 
@@ -370,7 +374,11 @@ def _arac_ciktisi_hata_mi(icerik: str) -> bool:
 
 
 #: Cevaptan sayi cikarmak icin. Binlik ayraci ve ondalik virgul/nokta kabul eder.
-_SAYI_YAKALA = re.compile(r"-?\d[\d.,]*")
+_SAYI_YAKALA = re.compile(r"(?<![A-Za-z0-9])-?\d[\d.,]*")
+#: Lookbehind sart: "AUTH-9204" gibi kontrol kimliklerinde tire eksi
+#: isareti sanilip sayi "-9204" olarak okunuyordu. Dayanak kontrolu o
+#: uydurma negatif degeri arac ciktisinda da bulup eslestirdigi icin
+#: koruma zayifliyordu.
 
 
 def _sayilari_cikar(metin: str) -> list[str]:
@@ -433,7 +441,12 @@ def _dogrulanmayan_sayilar(cevap: str, arac_ciktilari: list[str]) -> list[str]:
         if abs(deger) < 10:   # tek/iki haneli sayilar gurultu uretir
             continue
         basamak = len(ham.split(".")[1]) if "." in ham else 0
-        if any(round(d, basamak) == deger for d in dayanak):
+        # round() ile tam esitlik ASIMETRIKTI: arac 1403.9 dondurdugunde
+        # cevaptaki "1404" (yuvarlama) geciyor, "1403" (kirpma) uydurma
+        # damgasi yiyordu. Ikisi de mesru yazim; son basamak genisliginde
+        # tolerans araniyor.
+        tolerans = 10.0 ** (-basamak)
+        if any(abs(d - deger) < tolerans for d in dayanak):
             continue
         dogrulanmayan.append(ham)
     return dogrulanmayan

@@ -153,9 +153,15 @@ def sunucu_riski(df: pd.DataFrame | None = None) -> pd.DataFrame:
         maruziyet=("maruziyet", "first"),
         bulgu_sayisi=("durum", lambda s: int((s == "uyumsuz").sum())),
         belirsiz_sayisi=("durum", lambda s: int((s == "belirsiz").sum())),
-        kesin_risk=("kesin_risk", "sum"),
-        belirsiz_risk=("belirsiz_risk", "sum"),
-        toplam_risk=("toplam_risk", "sum"),
+        # skipna=False: pandas'in varsayilani NaN'i ATLAR. Bir kontrolun
+        # agirligi bozuksa o bulgunun riski toplamdan sessizce dusuyor ve
+        # sunucu OLDUGUNDAN DAHA GUVENLI gorunuyordu - risk analizinde en
+        # tehlikeli hata bicimi. Artik NaN yayilıyor; _json_guvenli onu
+        # null'a cevirdigi icin agent "hesaplanamadi" goruyor, yanlis bir
+        # sayi degil.
+        kesin_risk=("kesin_risk", lambda s: s.sum(skipna=False)),
+        belirsiz_risk=("belirsiz_risk", lambda s: s.sum(skipna=False)),
+        toplam_risk=("toplam_risk", lambda s: s.sum(skipna=False)),
     )
 
     for kolon in ("kesin_risk", "belirsiz_risk", "toplam_risk"):
