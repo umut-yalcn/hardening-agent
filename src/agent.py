@@ -416,6 +416,39 @@ def _dayanakli_degerler(arac_ciktilari: list[str]) -> list[float]:
     return degerler
 
 
+#: Cevapta gecen kontrol kimliklerini yakalar: "5.2.12" (CIS) ve
+#: "AUTH-9204" (Lynis) bicimleri.
+_KIMLIK_DESENI = re.compile(r"\b(\d+\.\d+\.\d+|[A-Z]{3,5}-\d{4})\b")
+#: "MADDE 14" ya da "14. madde" yazimlari.
+_MADDE_DESENI = re.compile(r"\bMADDE\s*(\d+)\b|\b(\d+)\.\s*madde\b", re.IGNORECASE)
+
+
+def _uydurma_atiflar(cevap: str) -> dict[str, list[str]]:
+    """Cevaptaki kontrol kimliklerini ve BDDK maddelerini KATALOGA dogrular.
+
+    Sayi dayanagi yalnizca SAYILARI denetliyordu. Oysa projenin iki manshet
+    iddiasi "kontrol kimlikleri uydurulmuyor" ve "her bulgu BDDK maddesine
+    baglaniyor". Bunlarin tek savunmasi sistem prompt'u ve denetci modeldi;
+    README'nin kendi durustluk notu denetci modelin guvenilmez oldugunu ve
+    kota bitince hic calismayabilecegini soyluyor. Yanlis duzenleyici atif,
+    projenin kendi ifadesiyle eksik atiftan kotudur - o yuzden bu kontrol
+    modele degil, katalogun kendisine dayaniyor.
+    """
+    from .controls import BDDK_BASLIK, KONTROLLER
+
+    gecerli_kimlik = {k.kontrol_id for k in KONTROLLER}
+    gecerli_madde = {str(m.value) for m in BDDK_BASLIK}
+
+    kimlikler = sorted({
+        k for k in _KIMLIK_DESENI.findall(cevap or "") if k not in gecerli_kimlik
+    })
+    maddeler = sorted({
+        (a or b) for a, b in _MADDE_DESENI.findall(cevap or "")
+        if (a or b) not in gecerli_madde
+    })
+    return {"kontrol_kimlikleri": kimlikler, "bddk_maddeleri": maddeler}
+
+
 def _dogrulanmayan_sayilar(cevap: str, arac_ciktilari: list[str]) -> list[str]:
     """Cevapta gecip arac ciktilarinda BULUNMAYAN sayilar.
 
@@ -545,6 +578,8 @@ def sor(soru: str, dogrula: bool = True) -> dict[str, Any]:
     if dayanaksiz:
         cevap = f"{DESTEKSIZ_CEVAP_UYARISI}\n\n{cevap}"
 
+    uydurma = _uydurma_atiflar(cevap)
+
     cikti = {
         "soru": soru,
         "cevap": cevap,
@@ -554,6 +589,8 @@ def sor(soru: str, dogrula: bool = True) -> dict[str, Any]:
         "duzeltme_denemesi": sonuc.get("duzeltme_denemesi", 0),
         "dayanaksiz_cevap": dayanaksiz,
         "dogrulanmayan_sayilar": dogrulanmayan,
+        "katalogda_olmayan_kimlikler": uydurma["kontrol_kimlikleri"],
+        "gecersiz_bddk_maddeleri": uydurma["bddk_maddeleri"],
     }
 
     if dogrula:

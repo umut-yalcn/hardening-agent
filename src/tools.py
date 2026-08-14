@@ -28,6 +28,9 @@ from .scoring import _bool_cevir, bulgu_siralamasi, maruziyet_carpani, sunucu_ri
 
 LISTE_SINIRI = 40
 
+#: kontrol_durumu icindeki sunucu listelerinin ust siniri.
+LISTE_KESME = 40
+
 BOYUTLAR = (
     "ortam", "rol", "ag_bolgesi", "isletim_sistemi",
     "destek_durumu", "veri_siniflandirmasi", "kategori", "bddk_maddesi", "seviye",
@@ -138,8 +141,12 @@ def kontrol_durumu(kontrol_id: str) -> dict[str, Any]:
         "bddk": k.bddk_etiketi,
         "risk_agirligi": k.agirlik,
         "olcum": m,
-        "uyumsuz_sunucular": uyumsuz["host_id"].tolist()[:40],
-        "durumu_bilinmeyen_sunucular": belirsiz["host_id"].tolist()[:40],
+        # Kesme BILDIRILIYOR: ajan donen kayitlari sayarak cikarim yaparsa
+        # yanilir. sunucu_listesi bu desene zaten sahipti, burasi eksikti.
+        "uyumsuz_sunucular": uyumsuz["host_id"].tolist()[:LISTE_KESME],
+        "uyumsuz_liste_kesildi": len(uyumsuz) > LISTE_KESME,
+        "durumu_bilinmeyen_sunucular": belirsiz["host_id"].tolist()[:LISTE_KESME],
+        "belirsiz_liste_kesildi": len(belirsiz) > LISTE_KESME,
         "uyumsuzlarin_internete_acik_olani": int(uyumsuz["internet_erisimi"].sum()),
         "uyumsuzlarin_uretimde_olani": int((uyumsuz["ortam"] == "uretim").sum()),
     }
@@ -160,7 +167,11 @@ def sunucu_durumu(host_id: str) -> dict[str, Any]:
 
     ilk = alt.iloc[0]
     m = uyum_ve_kapsam(alt)
-    gun = int(ilk["son_denetim_gun_once"])
+    # int(NaN) ValueError firlatiyordu. freshness.py ayni hatayi kapatirken
+    # burasi korumasiz kalmisti; denetim yasi bilinmeyen sunucu araci
+    # tamamen dusuruyordu.
+    _ham_gun = ilk["son_denetim_gun_once"]
+    gun = None if pd.isna(_ham_gun) else int(_ham_gun)
 
     bulgular = alt[alt["durum"] == "uyumsuz"].nlargest(10, "agirlik")
 

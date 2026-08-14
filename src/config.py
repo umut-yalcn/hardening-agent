@@ -8,6 +8,7 @@ kullanildigini bilmez.
 from __future__ import annotations
 
 import os
+import re
 import pathlib
 import time
 from functools import lru_cache
@@ -138,18 +139,32 @@ LLM_BEKLEME = 2.0
 #: Yeniden denenmeyecek hatalar. Bunlar tekrar denemekle duzelmez; denemek
 #: yalnizca kullaniciyi bekletir. Olculdu: gunluk kotasi dolmus bir modelde
 #: ayrimsiz yeniden deneme cagriyi 36 saniyeden 146 saniyeye cikariyordu.
+#: Metin izleri duz alt-dize olarak arandigi icin sayilar TEK BASINA
+#: yaziliyordu ve "timeout after 400ms" gibi GECICI bir hata kalici sanilip
+#: yeniden denenmiyordu. Sayilar artik ayri tutulup kod sinirina bakilarak
+#: eslestiriliyor (bkz. _gecici_mi).
 KALICI_HATA_IZLERI = (
-    "RESOURCE_EXHAUSTED", "429", "quota",          # kota
-    "INVALID_ARGUMENT", "400",                      # bozuk istek
-    "PERMISSION_DENIED", "403", "API key",          # yetki
-    "NOT_FOUND", "404",                             # yanlis model adi
+    "RESOURCE_EXHAUSTED", "quota",          # kota
+    "INVALID_ARGUMENT",                     # bozuk istek
+    "PERMISSION_DENIED", "API key",         # yetki
+    "NOT_FOUND",                            # yanlis model adi
 )
+
+#: HTTP durum kodlari: yalnizca rakam siniri icinde eslesirse kalici sayilir.
+KALICI_HATA_KODLARI = ("429", "400", "403", "404")
 
 
 def _gecici_mi(hata: BaseException) -> bool:
     """Hata tekrar denemekle duzelebilir mi?"""
     metin = str(hata)
-    return not any(iz in metin for iz in KALICI_HATA_IZLERI)
+    if any(iz in metin for iz in KALICI_HATA_IZLERI):
+        return False
+    # Kodlar ALFANUMERIK SINIR icinde araniyor: duz alt-dize eslesmesi
+    # "timeout after 400ms" (birim harfi bitisik) ya da istek kimligindeki
+    # bir "4041" yuzunden gecici hatayi kalici sayip yeniden denemiyordu.
+    return not any(
+        re.search(rf"(?<![0-9A-Za-z]){kod}(?![0-9A-Za-z])", metin) for kod in KALICI_HATA_KODLARI
+    )
 
 
 class _Dayanikli:

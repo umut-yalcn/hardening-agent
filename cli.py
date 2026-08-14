@@ -36,6 +36,21 @@ def main() -> int:
     for a in araclar:
         print(f"  {a['arac']}({a['girdi']})")
 
+    # Deterministik uyarilar, DENETCI MODELDEN ONCE basiliyor: bunlar katalogun
+    # kendisine dayaniyor, kota bitse de calisiyorlar. Hesaplanip kullaniciya
+    # gosterilmemeleri korumayi etkisiz kiliyordu.
+    sayilar = sonuc.get("dogrulanmayan_sayilar") or []
+    kimlikler = sonuc.get("katalogda_olmayan_kimlikler") or []
+    maddeler = sonuc.get("gecersiz_bddk_maddeleri") or []
+    if sayilar or kimlikler or maddeler:
+        print("\n--- Dayanak uyarilari (deterministik) ---")
+        if kimlikler:
+            print(f"  ! Katalogda OLMAYAN kontrol kimligi: {', '.join(kimlikler)}")
+        if maddeler:
+            print(f"  ! Gecersiz BDDK maddesi: {', '.join(maddeler)}")
+        if sayilar:
+            print(f"  ! Arac ciktisinda bulunamayan sayi: {', '.join(sayilar)}")
+
     d = sonuc.get("dogrulama")
     if d:
         durum = {True: "DOGRULANDI", False: "SORUNLU", None: "CALISTIRILAMADI"}[

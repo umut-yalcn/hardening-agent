@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import pandas as pd
 
+from .scoring import _bool_cevir
 from .fleet import birlesik, uyum_ve_kapsam
 
 #: Bu esikten eski denetim verisi guncel kabul edilmez.
@@ -45,7 +46,9 @@ def sunucu_kapsami(df: pd.DataFrame | None = None) -> pd.DataFrame:
                 "host_id": host_id,
                 "ortam": grup["ortam"].iloc[0],
                 "ag_bolgesi": grup["ag_bolgesi"].iloc[0],
-                "internet_erisimi": bool(grup["internet_erisimi"].iloc[0]),
+                # bool(nan) True'dur ve bool("False") de True'dur; scoring NaN'i
+                # False sayiyordu. Ayni sunucu iki katmanda ters yorumlaniyordu.
+                "internet_erisimi": _bool_cevir(grup["internet_erisimi"].iloc[0]),
                 "son_denetim_gun_once": gun,
                 # Denetim yasi BILINMIYORSA taze SAYILMAZ. Guvenlik
                 # tarafinda bilinmeyen, iyi haber degildir: "son taramanin ne
@@ -60,7 +63,14 @@ def sunucu_kapsami(df: pd.DataFrame | None = None) -> pd.DataFrame:
             }
         )
 
-    tablo = pd.DataFrame(satirlar)
+    # Bos girdi: pd.DataFrame([]) KOLONSUZ gelir ve sonraki satir
+    # KeyError('kapsam_orani') ile patlardi - hem de VeriYok gibi aciklayici
+    # bir hata degil, anlasilmaz bir istisnayla. Kolonlar sabitleniyor.
+    tablo = pd.DataFrame(satirlar, columns=[
+        "host_id", "ortam", "ag_bolgesi", "internet_erisimi",
+        "son_denetim_gun_once", "bayat", "uygulanabilir_kontrol",
+        "gozlemlenen_kontrol", "belirsiz_kontrol", "uyum_orani", "kapsam_orani",
+    ])
     tablo["yeterli_kapsam"] = tablo["kapsam_orani"] >= YETERLI_KAPSAM
     tablo["hukum_verilebilir"] = tablo["yeterli_kapsam"] & ~tablo["bayat"]
     return tablo

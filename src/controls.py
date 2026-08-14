@@ -285,7 +285,8 @@ _LYNIS = (
        "yama", 2, BddkMaddesi.ACIK_YAMA, 4, "Lynis"),
     _c("PKGS-7345", "Querying dpkg",
        "Paket envanteri cikarilamiyorsa yama durumu degerlendirilemez. "
-       "BDDK 15. madde yazilim envanteri tutulmasini istiyor.",
+       "BDDK 16. madde yama yonetimi istiyor; envanter cikmadan yama "
+       "durumu degerlendirilemez.",
        "yama", 1, BddkMaddesi.ACIK_YAMA, 6, "Lynis"),
     _c("KRNL-5695", "Determine Linux kernel version and release",
        "Cekirdek surumu bilinmeden zafiyet eslemesi yapilamaz.",

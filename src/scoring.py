@@ -177,7 +177,18 @@ def bulgu_siralamasi(df: pd.DataFrame | None = None, limit: int = 15) -> pd.Data
     veremedigi cevap budur.
     """
     r = risk_tablosu(df)
-    bulgular = r[r["durum"] == "uyumsuz"].nlargest(limit, "kesin_risk")
+    uyumsuz = r[r["durum"] == "uyumsuz"]
+
+    # nlargest NaN satirlari ATAR: riski hesaplanamayan bir bulgu "once bunu
+    # duzelt" listesinden sessizce kaybolurdu - listede yer olsa bile.
+    # sunucu_riski'nde skipna=False ile kapatilan hatanin ayni kok nedeni;
+    # duzeltme bu kardes fonksiyona uygulanmamisti. NaN'lar en basa aliniyor:
+    # "hesaplanamadi" gorunur olmali, gizlenmemeli.
+    hesaplanamayan = uyumsuz[uyumsuz["kesin_risk"].isna()]
+    hesaplanabilir = uyumsuz[uyumsuz["kesin_risk"].notna()].nlargest(
+        max(0, limit - len(hesaplanamayan)), "kesin_risk"
+    )
+    bulgular = pd.concat([hesaplanamayan.head(limit), hesaplanabilir])
 
     return bulgular[
         [

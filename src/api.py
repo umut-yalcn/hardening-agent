@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -15,6 +17,8 @@ from .agent import sor
 from .controls import BDDK_BASLIK, KONTROLLER
 from .freshness import filo_kapsam_ozeti
 from .tools import filo_ozeti
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="Sertlestirme Analiz Ajani",
@@ -28,7 +32,12 @@ app = FastAPI(
 
 
 class SoruIstegi(BaseModel):
-    soru: str = Field(..., min_length=3, examples=["Hangi BDDK maddesinde en cok sapma var?"])
+    # max_length sart: ust sinir olmadan uzun bir soru dogrudan token
+    # maliyetine donusuyor ve endpoint kimlik dogrulamasiz.
+    soru: str = Field(
+        ..., min_length=3, max_length=2000,
+        examples=["Hangi BDDK maddesinde en cok sapma var?"],
+    )
     dogrula: bool = Field(True, description="Cevabi ayri bir model cagrisiyla denetle.")
 
 
@@ -76,4 +85,11 @@ def sor_endpoint(istek: SoruIstegi) -> dict[str, Any]:
     try:
         return sor(istek.soru, dogrula=istek.dogrula)
     except Exception as hata:
-        raise HTTPException(status_code=500, detail=f"{type(hata).__name__}: {hata}") from hata
+        # Hata METNI istemciye donmuyor: VeriYok mesaji sunucunun mutlak
+        # dosya yolunu iceriyor ve bu bilgi disari sizmamali.
+        logger.exception("sor() basarisiz")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Istek islenemedi ({type(hata).__name__}). "
+                   "Ayrinti sunucu gunlugunde.",
+        ) from hata

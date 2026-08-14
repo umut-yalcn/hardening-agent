@@ -36,7 +36,26 @@ def sunucular() -> pd.DataFrame:
             f"Sunucu envanteri bulunamadi: {SUNUCU_YOLU}\n"
             "Once uret: python scripts/generate_fleet.py"
         )
-    return pd.read_csv(SUNUCU_YOLU)
+    # _bool_cevir TEMBEL ice aktariliyor: scoring zaten fleet'i ice aktardigi
+    # icin modul duzeyinde import dongu olustururdu.
+    from .scoring import _bool_cevir
+
+    df = pd.read_csv(SUNUCU_YOLU)
+
+    # Mukerrer host_id merge'te satirlari COGALTIR: ayni sunucunun bulgulari
+    # iki kez sayilir, riski ikiye katlanir, filo geneli siser. Sessizce
+    # yanlis sayi uretmektense yuklemeyi durduruyoruz.
+    if not df["host_id"].is_unique:
+        tekrar = sorted(df.loc[df["host_id"].duplicated(), "host_id"].unique())
+        raise VeriYok(f"Envanterde mukerrer host_id var: {tekrar}")
+
+    # internet_erisimi TEK NOKTADA normallestiriliyor. CSV bu kolonu "True",
+    # "yes", "1" gibi string tasiyabiliyor ve bool("False") True'dur; arac
+    # katmani kolonu ham maskeleme/.sum() ile kullandigi icin kaynakta
+    # cozmezsek her tuketici ayri sekilde yanilir.
+    if "internet_erisimi" in df.columns:
+        df["internet_erisimi"] = df["internet_erisimi"].map(_bool_cevir)
+    return df
 
 
 @lru_cache(maxsize=1)
@@ -83,7 +102,23 @@ def sonuclar() -> pd.DataFrame:
 @lru_cache(maxsize=1)
 def birlesik() -> pd.DataFrame:
     """Denetim sonuclarini sunucu ozellikleriyle birlestirir."""
-    return sonuclar().merge(sunucular(), on="host_id", how="left")
+    df = sonuclar().merge(sunucular(), on="host_id", how="left")
+
+    # Envanterde olmayan host_id, left merge'te tum ozellikleri NaN birakir ve
+    # maruziyet carpani 1.0'a (notr) duser: AYNI bulgular 8 kat DUSUK risk
+    # gosterir, sunucu siralamanin dibine iner, "internete acik" filtresine
+    # takilmaz. Gercek hayatta en olasi veri hatasi budur - CMDB envanteri
+    # geride kalir, tarayici yeni makineyi bulur - ve riski oldugundan az
+    # gosterdigi icin sessiz kalmamali. Katalogda olmayan kontrol_id zaten
+    # hata firlatiyordu; simetrigi eksikti.
+    if df["ortam"].isna().any():
+        eksik = sorted(df.loc[df["ortam"].isna(), "host_id"].unique())
+        raise VeriYok(
+            f"Envanterde karsiligi olmayan host_id var: {eksik}. "
+            "Bu sunucularin maruziyeti hesaplanamaz; riskleri oldugundan "
+            "dusuk gorunurdu."
+        )
+    return df
 
 
 def durum_dagilimi(df: pd.DataFrame) -> dict[str, int]:
