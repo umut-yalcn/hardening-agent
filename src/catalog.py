@@ -21,7 +21,7 @@ import chromadb
 from langchain_core.tools import tool
 
 from .config import CHROMA_PATH, get_embeddings
-from .controls import BDDK_BASLIK, KONTROLLER
+from .controls import BDDK_BASLIK, KONTROLLER, BddkMaddesi
 
 KOLEKSIYON_ADI = "kontrol_katalogu"
 
@@ -133,6 +133,21 @@ def katalogu_kur(force: bool = False) -> int:
     return koleksiyon.count()
 
 
+def _bddk_baslik(deger: Any) -> str:
+    """BDDK madde basligini, enum tabanina BAGLI OLMADAN bulur.
+
+    BDDK_BASLIK anahtarlari BddkMaddesi; Chroma metadatasinda ise duz sayi
+    duruyor. `BDDK_BASLIK.get(11)` su an calisiyor ama bunun tek sebebi
+    BddkMaddesi'nin int tabanli olmasi - tesadufi bir esitlik. Enum tanimi
+    degisirse arama patlamaz, SESSIZCE bos baslik doner ve cikti gerekcesiz
+    kalir. Donusum artik acik yapiliyor.
+    """
+    try:
+        return BDDK_BASLIK.get(BddkMaddesi(int(deger)), "")
+    except (ValueError, TypeError):
+        return ""
+
+
 @tool
 def kontrol_ara(sorgu: str, top_k: int = 5) -> str:
     """Dogal dilde tarif edilen bir guvenlik konusuna karsilik gelen kontrolleri bulur.
@@ -159,7 +174,7 @@ def kontrol_ara(sorgu: str, top_k: int = 5) -> str:
                 "kategori": meta["kategori"],
                 "cis_seviyesi": meta["seviye"],
                 "bddk_maddesi": meta["bddk_maddesi"],
-                "bddk_baslik": BDDK_BASLIK.get(meta["bddk_maddesi"], ""),
+                "bddk_baslik": _bddk_baslik(meta["bddk_maddesi"]),
                 "risk_agirligi": meta["agirlik"],
                 "kaynak": meta["kaynak"],
                 "aciklama": belge,

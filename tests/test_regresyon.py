@@ -11,6 +11,7 @@ from __future__ import annotations
 import pandas as pd
 
 from src.agent import _dogrulama_semasi, _dogrulanmayan_sayilar, _sayilari_cikar
+from src.catalog import _bddk_baslik
 from src.fleet import birlesik
 from src.freshness import sunucu_kapsami
 from src.scoring import risk_tablosu, sunucu_riski
@@ -81,3 +82,12 @@ class TestQwenDenetimi:
         for ortam in ("uretim", "test"):
             cikti = sunucu_listesi.invoke({"ortam": ortam})
             assert "not" in cikti
+
+    def test_bddk_basligi_enum_tabanina_bagli_degil(self):
+        """`BDDK_BASLIK.get(11)` yalnizca BddkMaddesi int tabanli oldugu icin
+        calisiyordu - tesadufi bir esitlik. Enum tanimi degisseydi arama
+        patlamaz, SESSIZCE bos baslik dondurup cikti gerekcesiz kalirdi."""
+        assert _bddk_baslik(11) == _bddk_baslik("11") == _bddk_baslik(11.0)
+        assert _bddk_baslik(11) != ""
+        assert _bddk_baslik(999) == ""
+        assert _bddk_baslik(None) == ""

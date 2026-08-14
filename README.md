@@ -69,6 +69,14 @@ Cevabı yazdıktan sonra **ayrı bir model çağrısı** her sayısal iddiayı a
 Doğrulanmış başlığı olmayan bölümler için CIS numarası uydurmak yerine Lynis
 kimliği kullanıldı. **Katalogdaki her satır dışarıdan kontrol edilebilir.**
 
+> **Sürüm notu.** Katalog belirli bir CIS Benchmark sürümüne sabitlenmemiştir.
+> Kontrol numaraları sürümler arasında kayabildiği için "birebir alındı" iddiası,
+> hangi sürümle karşılaştırıldığı yazılmadan dışarıdan tam olarak denetlenemez.
+> Bunu kapatmamak bilinçli bir tercih: elimizde doğrulayamadığımız bir sürüm
+> numarası yazmaktansa sınırı açıkça belirtmeyi seçtik. Üretim kullanımında
+> katalog, hedef dağıtımın Benchmark sürümüne sabitlenmeli ve sürüm yükseldiğinde
+> kimlikler yeniden doğrulanmalıdır.
+
 ### BDDK eşlemesi
 
 Her kontrol, *Bankaların Bilgi Sistemleri ve Elektronik Bankacılık Hizmetleri
