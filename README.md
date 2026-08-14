@@ -286,7 +286,7 @@ Parola deneme sınırı hangi sunucularda tanımlı değil?
 ## Doğrulama — API anahtarı gerekmez
 
 ```bash
-pytest tests/ -q                  # 96 passed
+pytest tests/ -q                  # 108 passed
 python scripts/demo_posture.py    # analiz katmanını canlı gösterir
 ```
 

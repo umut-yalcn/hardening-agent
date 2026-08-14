@@ -464,3 +464,147 @@ class TestBagimsizDenetimBulgulari:
             "internet_erisimi": False, "destek_durumu": "destekleniyor"})
         oran = en_maruz / en_korunakli
         assert 35 < oran < 39, f"belgelenen ~37 kat degil: {oran:.1f}"
+
+
+# --------------------------------------------------------------------------
+class TestSayiDayanagi:
+    """Kardes projede bulunan acigin buradaki karsiligi: dayanak kontrolu
+    yalnizca 'basarili bir arac cagrisi var mi' diye bakiyordu. Alakasiz tek
+    bir basarili cagri, cevaptaki TUM sayilara dayanak sagliyordu."""
+
+    def _kos(self, cevaplar, monkeypatch):
+        from langchain_core.messages import AIMessage
+
+        from src import agent as A
+
+        class Sahte:
+            def __init__(s):
+                s.c = list(cevaplar)
+
+            def bind_tools(s, _):
+                return s
+
+            def with_retry(s, *a, **k):
+                return s
+
+            def invoke(s, m, *a, **k):
+                return s.c.pop(0) if s.c else AIMessage(content="Yanitlayamiyorum.")
+
+        monkeypatch.setattr(A, "get_llm", lambda *a, **k: Sahte())
+        return A.sor("soru", dogrula=False)
+
+    @staticmethod
+    def _tc(ad, args=None):
+        from langchain_core.messages import AIMessage
+
+        return AIMessage(content="", tool_calls=[
+            {"name": ad, "args": args or {}, "id": "1", "type": "tool_call"}])
+
+    def test_alakasiz_cagri_uydurma_sayiya_dayanak_olmaz(self, monkeypatch):
+        from langchain_core.messages import AIMessage
+
+        r = self._kos([self._tc("filo_ozeti"),
+                       AIMessage(content="SSH root girisi 999 sunucuda acik.")], monkeypatch)
+        assert r["dayanaksiz_cevap"] is True
+        assert "999" in r["dogrulanmayan_sayilar"]
+
+    def test_gercek_sayilar_dogrulanir(self, monkeypatch):
+        from langchain_core.messages import AIMessage
+
+        r = self._kos([self._tc("kontrol_durumu", {"kontrol_id": "5.2.12"}),
+                       AIMessage(content="5.2.12 kontrolu 32 sunucuda uyumsuz, "
+                                         "10 tanesi internete acik.")], monkeypatch)
+        assert r["dayanaksiz_cevap"] is False
+        assert r["dogrulanmayan_sayilar"] == []
+
+    def test_kontrol_kimligi_yanlis_pozitif_uretmez(self, monkeypatch):
+        """5.2.12 gibi kimlikler ve BDDK madde numaralari sayi sanilmamali."""
+        from langchain_core.messages import AIMessage
+
+        r = self._kos([self._tc("kontrol_durumu", {"kontrol_id": "5.2.12"}),
+                       AIMessage(content="Kontrol 5.2.12, MADDE 11 kapsaminda.")], monkeypatch)
+        assert r["dogrulanmayan_sayilar"] == []
+
+    def test_arac_cagrilmadan_veri_iddiasi_duzeltmeye_gider(self, monkeypatch):
+        from langchain_core.messages import AIMessage
+
+        r = self._kos([AIMessage(content="En riskli ortam uretimdir.")], monkeypatch)
+        assert r["duzeltme_denemesi"] >= 1
+
+    def test_selamlama_engellenmez(self, monkeypatch):
+        from langchain_core.messages import AIMessage
+
+        r = self._kos([AIMessage(content="Merhaba, nasil yardimci olabilirim?")], monkeypatch)
+        assert r["duzeltme_denemesi"] == 0
+        assert r["dayanaksiz_cevap"] is False
+
+
+class TestJsonNumpyGuvenligi:
+    """numpy skalerleri ve pd.NA Python float/int DEGILDIR; onceden temizleyicinin
+    hicbir dalina girmiyor ve json.dumps'ta TypeError uretiyorlardi."""
+
+    @pytest.mark.parametrize(
+        "deger,beklenen",
+        [
+            ("float32_nan", None),
+            ("float64", 1.5),
+            ("int64", 42),
+            ("pd_na", None),
+            ("inf", None),
+        ],
+    )
+    def test_numpy_pandas_tipleri_temizlenir(self, deger, beklenen):
+        import json
+
+        import numpy as np
+
+        from src.tools import _json_guvenli
+
+        degerler = {
+            "float32_nan": np.float32("nan"),
+            "float64": np.float64(1.5),
+            "int64": np.int64(42),
+            "pd_na": pd.NA,
+            "inf": float("inf"),
+        }
+        temiz = _json_guvenli({"x": degerler[deger]})
+        assert temiz["x"] == beklenen or (beklenen is None and temiz["x"] is None)
+        json.dumps(temiz, allow_nan=False)
+
+
+class TestKatalogButunlugu:
+    """Onceden 'tek kayit bile varsa katalog tamamdir' varsayiliyordu; kesilmis
+    bir kurulum ya da degismis controls.py aramaya hic yansimiyordu."""
+
+    def test_eksik_katalog_yeniden_kurulur(self, monkeypatch):
+        from src import catalog as C
+
+        cagrildi = {"upsert": 0}
+
+        class SahteKoleksiyon:
+            def count(self):
+                return 1          # 61 degil
+
+            def upsert(self, **kw):
+                cagrildi["upsert"] += 1
+
+        monkeypatch.setattr(C, "_koleksiyon", lambda: SahteKoleksiyon())
+        C.katalogu_kur()
+        assert cagrildi["upsert"] == 1, "eksik katalog yeniden kurulmadi"
+
+    def test_tam_katalog_yeniden_kurulmaz(self, monkeypatch):
+        from src import catalog as C
+        from src.controls import KONTROLLER
+
+        cagrildi = {"upsert": 0}
+
+        class SahteKoleksiyon:
+            def count(self):
+                return len(KONTROLLER)
+
+            def upsert(self, **kw):
+                cagrildi["upsert"] += 1
+
+        monkeypatch.setattr(C, "_koleksiyon", lambda: SahteKoleksiyon())
+        C.katalogu_kur()
+        assert cagrildi["upsert"] == 0, "tam katalog gereksiz yere yeniden kuruldu"

@@ -101,7 +101,12 @@ def _koleksiyon():
 def katalogu_kur(force: bool = False) -> int:
     """Kontrol katalogunu vektor deposuna yazar."""
     koleksiyon = _koleksiyon()
-    if koleksiyon.count() > 0 and not force:
+
+    # Onceden "tek kayit bile varsa katalog tamamdir" varsayiliyordu. Kesilmis
+    # bir ilk kurulum ya da degismis controls.py, aramaya hic yansimiyordu -
+    # katalog "tek gercek kaynak" olsa da Chroma ondan kalici olarak
+    # sapabiliyordu. Artik BEKLENEN kontrol sayisiyla karsilastiriliyor.
+    if koleksiyon.count() == len(KONTROLLER) and not force:
         return koleksiyon.count()
 
     koleksiyon.upsert(

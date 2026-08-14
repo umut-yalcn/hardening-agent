@@ -9,6 +9,8 @@ Ajan isterse bunu gormezden gelemez, cunku sayiyi kendisi hesaplamiyor.
 from __future__ import annotations
 
 import math
+
+import pandas as pd
 from functools import wraps
 from typing import Any
 
@@ -46,6 +48,16 @@ def _json_guvenli(deger: Any) -> Any:
 
     Bu yuzden temizlik arac sinirinda yapiliyor - her cikti buradan gecer.
     """
+    # numpy skalerleri ve pandas'in NA'si Python float/int DEGILDIR; onceden
+    # bu dallarin hicbirine girmiyor ve json.dumps'ta TypeError uretiyorlardi.
+    # Mevcut veriyle tetiklenmiyor ama bozuk/yeni bir hesap uretebilir.
+    if deger is pd.NA or deger is pd.NaT:
+        return None
+    if hasattr(deger, "item") and hasattr(deger, "dtype"):
+        try:
+            deger = deger.item()   # numpy skaleri -> Python tipi
+        except (ValueError, AttributeError):
+            return str(deger)
     if isinstance(deger, float):
         return None if (math.isnan(deger) or math.isinf(deger)) else deger
     if isinstance(deger, dict):
