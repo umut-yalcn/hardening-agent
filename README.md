@@ -251,7 +251,9 @@ Sonuç dağılımı XCCDF durumlarıyla: `pass` %57.6, `fail` %27.0,
 ```bash
 python -m venv .venv
 .venv\Scripts\activate          # Windows
-pip install -r requirements.txt
+pip install -r requirements.txt        # gevsek surumler
+# ya da testlerin gectigi birebir ortam icin:
+pip install -r requirements-lock.txt
 
 cp .env.example .env            # GOOGLE_API_KEY değerini gir
 python scripts/generate_fleet.py --hosts 120
