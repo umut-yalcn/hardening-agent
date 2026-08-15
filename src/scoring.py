@@ -167,7 +167,15 @@ def sunucu_riski(df: pd.DataFrame | None = None) -> pd.DataFrame:
     for kolon in ("kesin_risk", "belirsiz_risk", "toplam_risk"):
         ozet[kolon] = ozet[kolon].round(1)
 
-    return ozet.sort_values("toplam_risk", ascending=False).reset_index()
+    # na_position="first": pandas varsayilani NaN'i EN SONA atiyor, yani
+    # riski HESAPLANAMAYAN sunucu, riski sifir olandan da iyi gorunuyor ve
+    # risk_siralamasi'nin head(limit)'inden tamamen kayboluyordu. Olculdu:
+    # filonun 1. sirasindaki sunucu tek bir bozuk agirlikla 120/120'ye dustu.
+    # Kardes fonksiyon bulgu_siralamasi NaN'lari basa aliyor; burada
+    # uygulanmamisti.
+    return ozet.sort_values(
+        "toplam_risk", ascending=False, na_position="first"
+    ).reset_index()
 
 
 def bulgu_siralamasi(df: pd.DataFrame | None = None, limit: int = 15) -> pd.DataFrame:

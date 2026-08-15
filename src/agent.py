@@ -419,8 +419,10 @@ def _dayanakli_degerler(arac_ciktilari: list[str]) -> list[float]:
 #: Cevapta gecen kontrol kimliklerini yakalar: "5.2.12" (CIS) ve
 #: "AUTH-9204" (Lynis) bicimleri.
 _KIMLIK_DESENI = re.compile(r"\b(\d+\.\d+\.\d+|[A-Z]{3,5}-\d{4})\b")
-#: "MADDE 14" ya da "14. madde" yazimlari.
-_MADDE_DESENI = re.compile(r"\bMADDE\s*(\d+)\b|\b(\d+)\.\s*madde\b", re.IGNORECASE)
+#: "MADDE 14" ya da "14. madde/maddeye/maddesi" yazimlari. Sondaki \b
+#: yerine \w*: Turkcenin en dogal cekimleri (maddeye, maddesi, maddede)
+#: eslesmiyordu ve deterministik atif savunmasi delikti.
+_MADDE_DESENI = re.compile(r"\bMADDE\s*(\d+)\b|\b(\d+)\.\s*madde\w*", re.IGNORECASE)
 
 
 def _uydurma_atiflar(cevap: str) -> dict[str, list[str]]:

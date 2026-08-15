@@ -15,8 +15,23 @@ import pandas as pd
 from .controls import BELIRSIZ, KAPSAM_DISI, KESIN_UYUMLU, KESIN_UYUMSUZ, KONTROLLER
 
 KOK = pathlib.Path(__file__).resolve().parents[1]
-SUNUCU_YOLU = pathlib.Path(os.getenv("SUNUCU_YOLU", KOK / "data" / "sunucular.csv"))
-SONUC_YOLU = pathlib.Path(os.getenv("SONUC_YOLU", KOK / "data" / "denetim_sonuclari.csv"))
+def _veri_yolu(env_adi: str, varsayilan: pathlib.Path) -> pathlib.Path:
+    """Ortam degiskeni BOS ise varsayilana duser.
+
+    os.getenv yalnizca degisken YOKSA varsayilani verir. README'nin kendi
+    kurulum komutu `cp .env.example .env` idi ve .env.example icinde
+    SUNUCU_YOLU= bos tanimliydi: load_dotenv onu "" olarak ortama koyuyor,
+    Path("") == Path(".") oluyor ve .exists() True donduugu icin aciklayici
+    VeriYok hatasi da atlanip pd.read_csv(".") deneniyordu. Olculdu: README
+    komutu sonrasi 39 test dusuyordu. config.py'de ayni tuzak uc yerde
+    bilincle kapatilmis, veri yollari unutulmustu.
+    """
+    ham = os.getenv(env_adi, "").strip()
+    return pathlib.Path(ham) if ham else varsayilan
+
+
+SUNUCU_YOLU = _veri_yolu("SUNUCU_YOLU", KOK / "data" / "sunucular.csv")
+SONUC_YOLU = _veri_yolu("SONUC_YOLU", KOK / "data" / "denetim_sonuclari.csv")
 
 _BELIRSIZ = {s.value for s in BELIRSIZ}
 _UYUMLU = {s.value for s in KESIN_UYUMLU}
@@ -84,6 +99,18 @@ def sonuclar() -> pd.DataFrame:
     )
 
     df = df.merge(katalog, on="kontrol_id", how="left")
+    # Mukerrer (host_id, kontrol_id) cifti: tarayici yeniden kosup CSV'ye
+    # EKLEME yaptiginda eski fail ile yeni pass yan yana sayiliyor. Uyum orani
+    # sessizce YUKSELIYOR, risk ise ikiye katlaniyor - iki yon de sessiz ve
+    # ters. sunucular() mukerrer host_id'yi zaten reddediyordu; ikizi eksikti.
+    cift = df.duplicated(["host_id", "kontrol_id"])
+    if cift.any():
+        ornek = df.loc[cift, ["host_id", "kontrol_id"]].head(3).to_dict("records")
+        raise VeriYok(
+            f"Denetim sonuclarinda mukerrer (host_id, kontrol_id) cifti var "
+            f"({int(cift.sum())} satir). Ornek: {ornek}"
+        )
+
     if df["baslik"].isna().any():
         eksik = sorted(df.loc[df["baslik"].isna(), "kontrol_id"].unique())
         raise VeriYok(f"Katalogda olmayan kontrol kimlikleri var: {eksik}")

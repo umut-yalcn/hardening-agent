@@ -188,7 +188,10 @@ def sunucu_durumu(host_id: str) -> dict[str, Any]:
         "destek_durumu": ilk["destek_durumu"],
         "maruziyet_carpani": maruziyet_carpani(ilk),
         "son_denetim_gun_once": gun,
-        "denetim_bayat_mi": gun > TAZELIK_ESIGI_GUN,
+        # gun None olabiliyor (NaN korumasi 18 satir yukarida eklenmisti)
+        # ve None > int TypeError firlatiyordu. freshness.py'deki fail-closed
+        # davranisin aynisi: yasi bilinmeyen denetim TAZE SAYILMAZ.
+        "denetim_bayat_mi": True if gun is None else gun > TAZELIK_ESIGI_GUN,
         "olcum": m,
         "en_agir_bulgular": bulgular[
             ["kontrol_id", "baslik", "kategori", "bddk_maddesi", "agirlik"]
