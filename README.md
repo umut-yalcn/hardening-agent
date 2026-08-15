@@ -134,8 +134,8 @@ Denetimi bayat (>30 gün)          : 25
 
 | Sunucu | Uyum oranı | Kapsam oranı | Gerekçe |
 |---|---|---|---|
-| srv-107 | **%100.0** | %18.3 | kapsam yalnızca %18 |
 | srv-039 | %80.0 | %17.0 | kapsam yalnızca %17 |
+| srv-107 | **%100.0** | %18.3 | kapsam yalnızca %18 |
 | srv-009 | %82.3 | %28.3 | kapsam yalnızca %28 |
 | srv-058 | %81.5 | %90.0 | 105 gündür denetlenmemiş |
 
