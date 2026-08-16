@@ -1,5 +1,7 @@
 # Sertleştirme Analiz Ajanı — Sunucu Filosunda Uyum, Maruziyet ve Belirsizlik
 
+[![testler](https://github.com/umut-yalcn/hardening-agent/actions/workflows/testler.yml/badge.svg)](https://github.com/umut-yalcn/hardening-agent/actions/workflows/testler.yml)
+
 Sunucu filosunun sertleştirme durumunu doğal dilde sorgulanabilir kılan bir
 analiz ajanı. Ajan hangi analizi yapacağına çalışma anında kendisi karar verir;
 her bulguyu ihlal ettiği **BDDK maddesine** bağlar.
@@ -318,4 +320,4 @@ sayılmaması.
 
 ## Geliştirici
 
-**Umut Yalçın** — [github.com/umutyalcin-pen](https://github.com/umutyalcin-pen)
+**Umut Yalçın** — [github.com/umut-yalcn](https://github.com/umut-yalcn)
